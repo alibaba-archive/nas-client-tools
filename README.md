@@ -1,5 +1,16 @@
 # 阿里云NAS客户端工具
 
-### check_noresvport.py
+### linux_client/check_noresvport.py
 检查客户端已挂载的NAS实例是否使用了noresvport参数挂载。
-请下载到ECS客户端执行。如果使用ECS直接挂载NAS，请带上-r参数执行脚本。
+请下载到Linux系统的ECS客户端执行。命令格式：
+python2.7 check_noresvport.py
+
+### linux_client/check_alinas_nfs_mount.py
+对于指定的NFS挂载点地址和本地路径，排查相应的挂载问题。
+请下载到Linux系统的ECS客户端执行。命令格式：
+python2.7 check_alinas_nfs_mount.py file-system-id.region.nas.aliyuncs.com:/ /mnt
+
+### windows_client/check_alinas_nfs_mount.py
+对于指定的SMB挂载点地址，排查相应的挂载问题。
+请下载到Windows系统的ECS客户端执行。命令格式：
+.\alinas_smb_windows_inspection.ps1 -MountAddress abcde-123.region-id.nas.aliyuncs.com -Locale zh-CN
