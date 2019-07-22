@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-VERSION = '1.2'
+VERSION = '1.3'
 
 import re
 import os
@@ -98,6 +98,12 @@ def run_cmd(cmd):
         verbose_print(colormsg(output, colors.bold))
     return status == 0
 
+def get_ip_of_hostname(hostname):
+    try:
+        ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        return None
+    return ip
 
 class MountParser:
     @staticmethod
@@ -255,13 +261,35 @@ class MountParser:
         return mount_cmd
 
     @staticmethod
+    def check_sys_port_occupied(ss_output):
+        tcp_conn_list = ss_output.split('\n')
+        no_sys_port_occupied = True
+        occupied_sys_port_list = []
+        for tcp_conn_line in tcp_conn_list:
+            tcp_conn = tcp_conn_line.split()
+            if len(tcp_conn) != 5 \
+               or ':' not in tcp_conn[3]:
+                continue
+            local_port = int(tcp_conn[3].split(':', 1)[1])
+            if local_port < SYSTEM_PORT_LIMIT:
+                occupied_sys_port_list.append(str(local_port))
+                no_sys_port_occupied = False
+        if not no_sys_port_occupied:
+            verbose_print('')
+            verbose_print(colormsg(
+                "现存NFS连接占用了以下系统端口：" + \
+                ','.join(occupied_sys_port_list),
+                colors.fg.orange))
+        return no_sys_port_occupied
+
+    @staticmethod
     def parse_fuser_output(local_dir):
         if not run_cmd("which fuser"):
             abort(OSError,
                   """
                   fuser工具不存在，请选择以下命令安装
                   CentOS/RedHat：yum install -y psmisc
-                  Debian/Ubuntu：apt-get --yes install fuser
+                  Debian/Ubuntu：apt-get --yes install psmisc
                   安装后再次运行脚本，如果仍然失败，请联系%s
                   """ % GENERAL_CONTACT)
         (status, output) = commands.getstatusoutput(
@@ -321,11 +349,14 @@ class ConditionChecker(object):
         verbose_print('')
         return False
 
-    def alarm_upgrade_kernel(self):
+    def alarm_upgrade_kernel(self, kernel_version):
         print(colormsg(
             """
-            内核版本过低，请联系%s
-            """ % KERNEL_CONTACT,
+            内核版本%s存在已知缺陷，请联系%s
+            详细信息请参考https://help.aliyun.com/document_detail/114129.html
+            """ % (
+                kernel_version,
+                KERNEL_CONTACT),
             colors.fg.blue))
 
     def alarm_unmount_server(self, mount_info_dict, mount_addr):
@@ -361,7 +392,7 @@ class ConditionChecker(object):
                         sudo umount %s
                 3. 确认所有相关本地挂载路径完成卸载，以下命令应该返回为空
                         mount | grep %s
-                4. 执行以下命令，通过此脚本重新挂载以上所有目录（挂载命令已经加入noresvport）
+                4. 执行以下命令，重新挂载以上所有目录（挂载命令已经加入noresvport）
                         %s
             如果重新挂载出现相同问题，可能是遇到了客户端Linux的缺陷，请择机重启机器后再挂载
             """ % (
@@ -419,6 +450,11 @@ class RootUserChecker(ConditionChecker):
     def check(self):
         if os.geteuid() != 0:
             verbose_print('')
+            print(colormsg(
+                """
+                此脚本需要使用root权限执行
+                """,
+                colors.fg.blue))
         return os.geteuid() == 0
 
 
@@ -434,6 +470,7 @@ class KernelVersChecker(ConditionChecker):
             print(colormsg(output, colors.bold))
             abort(OSError, "uname命令异常，请注意此脚本只适用于Linux系统")
         (sysname, version) = output.split(' ', 1)
+        self.kernel_version = version
 
         # Only Linux is supported
         if sysname != "Linux":
@@ -448,16 +485,20 @@ class KernelVersChecker(ConditionChecker):
 
         # Check if the kernel version is known to have problems
         bad_kernels = {
-            '2.6.32' : '696.16.1'
+            '4.2.0': ('18', '19'),
+            '3.10.0' : ('', '229.11.1'),
+            '2.6.32' : ('696', '696.10.1')
         }
-        if major in bad_kernels and minor < bad_kernels[major]:
+        if major in bad_kernels \
+           and minor >= bad_kernels[major][0] \
+           and minor < bad_kernels[major][1]:
             verbose_print('')
             return False
         return True
 
     def repair(self):
         verbose_print('')
-        self.alarm_upgrade_kernel()
+        self.alarm_upgrade_kernel(self.kernel_version)
         return False
 
 
@@ -507,7 +548,11 @@ class PortRangeChecker(ConditionChecker):
     def check(self):
         if not run_cmd("which ss"):
             abort(OSError, "ss工具不存在，请联系%s" % GENERAL_CONTACT)
-        ip = socket.gethostbyname(self.mount_addr)
+        ip = get_ip_of_hostname(self.mount_addr)
+        if ip is None:
+            # Found no valid IP address for mount_addr
+            return True
+
         remote_ip_port = str(ip) + ':' + str(NFS_DEFAULT_PORT)
 
         (status, output) = commands.getstatusoutput(
@@ -515,27 +560,7 @@ class PortRangeChecker(ConditionChecker):
         if status != 0:
             # Found no existing TCP connection for mount_addr
             return True
-        tcp_conn_list = output.split('\n')
-
-        no_sys_port_occupied = True
-        occupied_sys_port_list = []
-        for tcp_conn_line in tcp_conn_list:
-            tcp_conn = tcp_conn_line.split()
-            if len(tcp_conn) != 5 \
-               or tcp_conn[4] != remote_ip_port \
-               or ':' not in tcp_conn[3]:
-                continue
-            local_port = int(tcp_conn[3].split(':', 1)[1])
-            if local_port < SYSTEM_PORT_LIMIT:
-                occupied_sys_port_list.append(str(local_port))
-                no_sys_port_occupied = False
-        if not no_sys_port_occupied:
-            verbose_print('')
-            verbose_print(colormsg(
-                "现存NFS连接占用了以下系统端口：" + \
-                ','.join(occupied_sys_port_list),
-                colors.fg.orange))
-        return no_sys_port_occupied
+        return MountParser.check_sys_port_occupied(output)
 
 
 class EffNoresvportChecker(ConditionChecker):
@@ -558,6 +583,22 @@ class EffNoresvportChecker(ConditionChecker):
             # Ignore the mount address if it has not been mounted
             return True
 
+        ip = get_ip_of_hostname(self.mount_addr)
+
+        if ip is None:
+            if self.mount_addr not in self.mount_info_dict:
+                abort(ValueError, "挂载点%s无法在%s中找到，请联系%s" % (
+                    self.mount_addr, MOUNT_FILENAME, GENERAL_CONTACT))
+            mount_tuple_list = self.mount_info_dict[self.mount_addr]
+            mountpoint_list = []
+            for mount_tuple in mount_tuple_list:
+                mountpoint_list.append(mount_tuple[0])
+            print(colormsg(
+                "挂载点%s已被删除，请确认并卸载相关本地目录：umount -l %s" % (
+                    self.mount_addr, ' '.join(mountpoint_list)),
+                colors.fg.red))
+            return False
+
         noresvport_effective = True
         for mount_tuple in self.mount_tuple_list:
             (mountpoint, path, systype, opt_str) = mount_tuple
@@ -579,6 +620,48 @@ class EffNoresvportChecker(ConditionChecker):
         if self.need_repair:
             self.alarm_unmount_server(
                 self.mount_info_dict, self.mount_addr)
+        return False
+
+
+class BadConnChecker(ConditionChecker):
+    EXIT_ON_FAIL = False
+    CHECK_MSG = "正在检查是否存在残留的坏连接"
+    REPAIR_MSG = "存在需要重启修复的残留连接"
+    FAIL_MSG = ""
+
+    def __init__(self, mount_info_dict, need_repair):
+        self.mount_info_dict = mount_info_dict
+        self.need_repair = need_repair
+
+    def check(self):
+        ip_list = []
+        for server in self.mount_info_dict:
+            ip = get_ip_of_hostname(server)
+            if ip is not None:
+                ip_list.append(ip)
+        ip_list_str = '|'.join(ip_list)
+        cmd = 'ss -nt | grep ESTAB | grep %s' % str(NFS_DEFAULT_PORT)
+        if ip_list_str:
+            cmd += ' | grep -Ev "%s"' % ip_list_str
+        (status, output) = commands.getstatusoutput(cmd)
+        if status != 0 or not output:
+            # Found no leaked TCP connection
+            return True
+        no_sys_port_occupied = MountParser.check_sys_port_occupied(output)
+        if not no_sys_port_occupied:
+            print(colormsg(
+                "存在没有使用noresvport的残留NFS连接，请在业务低峰期重启ECS修复",
+                colors.fg.red))
+        return no_sys_port_occupied
+
+    def repair(self):
+        verbose_print('')
+        if self.need_repair:
+            print(colormsg(
+            """
+            存在残留的NFS连接没有使用noresvport，为了避免后续的挂载复用此连接，请在业务低峰期重启ECS，回收此连接
+            """,
+                colors.fg.blue))
         return False
 
 
@@ -616,6 +699,9 @@ class NfsMountHelper(object):
             check_list.append(
                 EffNoresvportChecker(
                     mount_info_dict, server, self.need_repair))
+
+        check_list.append(
+            BadConnChecker(mount_info_dict, self.need_repair))
 
         return check_list
 
