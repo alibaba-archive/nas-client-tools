@@ -10,7 +10,7 @@ python2.7 check_noresvport.py
 请下载到Linux系统的ECS客户端执行。命令格式：
 python2.7 check_alinas_nfs_mount.py file-system-id.region.nas.aliyuncs.com:/ /mnt
 
-### windows_client/check_alinas_nfs_mount.py
+### windows_client/alinas_smb_windows_inspection.ps1
 对于指定的SMB挂载点地址，排查相应的挂载问题。
 请下载到Windows系统的ECS客户端执行。命令格式：
 .\alinas_smb_windows_inspection.ps1 -MountAddress abcde-123.region-id.nas.aliyuncs.com -Locale zh-CN
