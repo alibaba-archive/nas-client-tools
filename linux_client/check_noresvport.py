@@ -118,10 +118,7 @@ class MountParser:
         server_allowed = set(string.ascii_lowercase + \
                              string.ascii_uppercase + \
                              string.digits + '.' + '-')
-        path_allowed = server_allowed
-        path_allowed.add('/')
-        if not set(server) <= server_allowed \
-           or not set(path) <= path_allowed:
+        if not set(server) <= server_allowed:
             return None
         if not server.endswith(NAS_ALIYUN_SUFFIX) \
            or not path.startswith('/'):
@@ -594,7 +591,7 @@ class EffNoresvportChecker(ConditionChecker):
             for mount_tuple in mount_tuple_list:
                 mountpoint_list.append(mount_tuple[0])
             print(colormsg(
-                "挂载点%s已被删除，请确认并卸载相关本地目录：umount -l %s" % (
+                "挂载点%s疑似已被删除，请登录NAS控制台确认已删除，然后在业务低峰期转移相关任务，并且卸载本地目录：umount -l %s" % (
                     self.mount_addr, ' '.join(mountpoint_list)),
                 colors.fg.red))
             return False
