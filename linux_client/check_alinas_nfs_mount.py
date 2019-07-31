@@ -332,10 +332,7 @@ class MountParser:
         server_allowed = set(string.ascii_lowercase + \
                              string.ascii_uppercase + \
                              string.digits + '.' + '-')
-        path_allowed = server_allowed
-        path_allowed.add('/')
-        if not set(server) <= server_allowed \
-           or not set(path) <= path_allowed:
+        if not set(server) <= server_allowed:
             return None
         if not server.endswith(NAS_ALIYUN_SUFFIX) \
            or not path.startswith('/'):
