@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-VERSION = '1.3'
+VERSION = '1.4'
 
 import re
 import os
@@ -27,7 +27,7 @@ import socket
 import time
 import multiprocessing
 import string
-from subprocess import Popen, PIPE
+import platform
 from abc import ABCMeta, abstractmethod
 
 GENERAL_CONTACT = "NAS研发团队（钉钉群号：23110762）"
@@ -321,6 +321,16 @@ class questions:
 
 class MountParser:
     @staticmethod
+    def is_aliyun_nas_server(server):
+        if server.endswith(NAS_ALIYUN_EXTREME_SUFFIX):
+            print(colormsg(
+                "目前此脚本还不支持极速型NAS挂载排查，跳过自动检查",
+                colors.fg.orange))
+        elif server.endswith(NAS_ALIYUN_SUFFIX):
+            return True
+        return False
+
+    @staticmethod
     def split_server_path(server_path_str):
         if ':' in server_path_str:
             server_path_list = server_path_str.split(':', 1)
@@ -332,15 +342,8 @@ class MountParser:
         server_allowed = set(string.ascii_lowercase + \
                              string.ascii_uppercase + \
                              string.digits + '.' + '-')
-        if not set(server) <= server_allowed:
-            return None
-        if not server.endswith(NAS_ALIYUN_SUFFIX) \
+        if not set(server) <= server_allowed \
            or not path.startswith('/'):
-            return None
-        if server.endswith(NAS_ALIYUN_EXTREME_SUFFIX):
-            print(colormsg(
-                "目前此脚本还不支持极速型NAS挂载排查，跳过自动检查",
-                colors.fg.orange))
             return None
         server_path_dict = {}
         server_path_dict['server'] = server
@@ -441,14 +444,16 @@ class MountParser:
         for mount_line in mount_lines:
             mount_status_dict = MountParser.split_mount_status(mount_line)
             target = mount_status_dict['target']
+            mountpoint = mount_status_dict['mountpoint']
+            systype = mount_status_dict['systype']
+            opt_str = mount_status_dict['opt_str']
+            if not systype.lower().startswith('nfs'):
+                continue
             server_path_dict = MountParser.split_server_path(target)
             if not server_path_dict:
                 continue
             server = server_path_dict['server']
             path = server_path_dict['path']
-            mountpoint = mount_status_dict['mountpoint']
-            systype = mount_status_dict['systype']
-            opt_str = mount_status_dict['opt_str']
             if server not in mount_info_dict:
                 mount_info_dict[server] = []
             mount_info_dict[server].append(
@@ -734,13 +739,8 @@ class KernelVersChecker(ConditionChecker):
     REPAIR_MSG = "当前内核版本存在已知问题"
 
     def check(self):
-        # Find kernel version by "uname -sr"
-        (status, output) = commands.getstatusoutput("uname -sr")
-        if status != 0 or ' ' not in output:
-            verbose_print('')
-            print(colormsg(output, colors.bold))
-            abort(OSError, "uname命令异常，请注意此脚本只适用于Linux系统")
-        (sysname, version) = output.split(' ', 1)
+        sysname = platform.system()
+        version = platform.release()
         self.kernel_version = version
 
         # Only Linux is supported
@@ -1115,7 +1115,8 @@ class NfsMountHelper(object):
                              help='NFS挂载选项，例如vers=4.0,noresvport')
         user_options = _parser.parse_args()
         server_path_dict = MountParser.split_server_path(user_options.mount_target)
-        if not server_path_dict:
+        if not server_path_dict \
+           or not MountParser.is_aliyun_nas_server(server_path_dict['server']):
             abort(ValueError, """
     请以<server>:<path>格式提供挂载点地址和NAS子目录，例如：foo%s:/
     挂载点地址<server>必须以'%s'结尾，NAS子目录<path>必须以'/'开头
