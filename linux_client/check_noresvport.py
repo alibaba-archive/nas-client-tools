@@ -637,7 +637,7 @@ class BadConnChecker(ConditionChecker):
             if ip is not None:
                 ip_list.append(ip)
         ip_list_str = '|'.join(ip_list)
-        cmd = 'ss -nt | grep ESTAB | grep %s' % str(NFS_DEFAULT_PORT)
+        cmd = 'ss -nt | grep ESTAB | grep -w %s' % str(NFS_DEFAULT_PORT)
         if ip_list_str:
             cmd += ' | grep -Ev "%s"' % ip_list_str
         (status, output) = commands.getstatusoutput(cmd)
