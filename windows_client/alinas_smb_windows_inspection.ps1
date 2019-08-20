@@ -370,6 +370,8 @@ function Check-NfsService()
 {
     $actionString = ""
 
+    Import-Module ServerManager
+
     # Check FS-NFS-Service* role
     $nfsServices = Get-WindowsFeature FS-NFS-Service*
     if ($nfsServices.Count -gt 0 -And $nfsServices[0].Installed)
@@ -621,6 +623,10 @@ catch
     Write-Host $_.ScriptStackTrace -ForegroundColor Red
     Write-Host "Exception:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
+
+    # Show next steps if available
+    Write-Host ""
+    Print-NextSteps
 }
 finally
 {
@@ -633,7 +639,7 @@ finally
     $currEncoding = [System.Console]::OutputEncoding
     if ($sysEncoding -ne $currEncoding)
     {
-        Write-Host "`n!! NOTICE: console output encoding has changed to $($currEncoding.EncodingName)"
+        Write-Host "`n!! NOTICE: console output encoding has been changed to $($currEncoding.EncodingName)"
         Write-Host "- Run the following command to recover original console output encoding ($($sysEncoding.EncodingName)):"
         Write-Host "  [System.Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding($($sysEncoding.CodePage))"
     }
