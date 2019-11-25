@@ -738,6 +738,24 @@ class KernelVersChecker(ConditionChecker):
     CHECK_MSG = "正在检查系统内核版本..."
     REPAIR_MSG = "当前内核版本存在已知问题"
 
+    def vers_compare(self, str1, str2):
+        list1 = str1.split('.')
+        list2 = str2.split('.')
+        head1 = list1[0]
+        head2 = list2[0]
+        if (not head1) and (not head2):
+            return 0
+        elif not head1:
+            return -1
+        elif not head2:
+            return 1
+        digit1 = int(head1) if head1.isdigit() else 0
+        digit2 = int(head2) if head2.isdigit() else 0
+        if digit1 == digit2:
+            return self.vers_compare('.'.join(list1[1:]), '.'.join(list2[1:]))
+        else:
+            return digit1 - digit2
+
     def check(self):
         sysname = platform.system()
         version = platform.release()
@@ -764,7 +782,7 @@ class KernelVersChecker(ConditionChecker):
             (major, minor) = version.split('-', 1)
         else:
             major = version
-            minor = '0'
+            minor = ''
 
         # Check if the kernel version is known to have problems
         bad_kernels = {
@@ -773,8 +791,8 @@ class KernelVersChecker(ConditionChecker):
             '2.6.32' : ('696', '696.10.1')
         }
         if major in bad_kernels \
-           and minor >= bad_kernels[major][0] \
-           and minor < bad_kernels[major][1]:
+           and self.vers_compare(minor, bad_kernels[major][0]) >= 0 \
+           and self.vers_compare(minor, bad_kernels[major][1]) < 0:
             verbose_print('')
             return False
         return True
