@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-VERSION = '1.4'
+VERSION = '1.5'
 
 import re
 import os
@@ -104,6 +104,41 @@ def get_ip_of_hostname(hostname):
     except socket.gaierror:
         return None
     return ip
+
+def recommend_container_solution():
+    print(colormsg(
+            """
+            如果您使用老版本的docker直接挂载NAS，请避免手动执行docker volume rm，该命令可能会造成数据丢失风险
+            详细信息请参考文档 https://success.docker.com/article/risk-of-data-loss-when-volume-is-removed
+            以下推荐步骤均不涉及此风险，请放心使用
+            """,
+        colors.fg.orange))
+    print(colormsg(
+            """
+            如果您使用的是阿里云K8S服务，推荐按以下步骤处理：
+                1. 在NAS控制台上添加NAS挂载点
+                   https://help.aliyun.com/document_detail/27531.html#title-bgs-dcm-bee
+                2. 升级FlexVolume插件到最新版
+                   https://help.aliyun.com/document_detail/100605.html
+                3. 配置新PV，使用FlexVolume方式挂载新建的NAS挂载点
+                   https://help.aliyun.com/document_detail/88940.html
+                4. 将业务逐渐迁移到新PV生成的pod上
+                5. 逐步废弃老的pod
+                6. 禁用老的NAS挂载点
+                7. 确认业务不受影响，正常运行
+                8. 删除老的NAS挂载点
+            如果您使用的是其他容器管理系统，推荐按以下步骤处理：
+                1. 新建Kubernetes托管版集群
+                   https://help.aliyun.com/document_detail/95108.html
+                2. 在新建的K8S集群上，使用FlexVolume插件挂载现有NAS挂载点
+                   https://help.aliyun.com/document_detail/88940.html
+                3. 将业务逐步迁移到新的K8S集群上
+                4. 确认业务在新的K8S集群上运行正常
+                5. 逐步废弃老的容器系统
+            以上两种方法，均使用新版的FlexVolume插件，挂载NAS时会自带noresvport参数，是最方便的处理方法
+            如果您希望考虑其他方法，请参考文档 https://yq.aliyun.com/articles/707169 处理，如有疑问请联系%s
+            """ % CONTAINER_CONTACT,
+        colors.fg.blue))
 
 class MountParser:
     @staticmethod
@@ -354,8 +389,16 @@ class ConditionChecker(object):
     def alarm_upgrade_kernel(self, kernel_version):
         print(colormsg(
             """
-            内核版本%s存在已知缺陷，请联系%s
-            详细信息请参考https://help.aliyun.com/document_detail/114129.html
+            内核版本%s存在已知缺陷
+            缺陷详情请参考文档 https://help.aliyun.com/document_detail/114129.html
+            请按照以下步骤处理：
+                1. 购买新版内核的ECS
+                2. 在新ECS上挂载现有NAS文件系统
+                3. 将业务逐步迁移到新的ECS上
+                4. 确认业务在新的ECS上运行正常
+                5. 逐步废弃老的ECS
+            请注意，升级ECS内核风险较大，我们不推荐这种做法。如果您坚持选择升级ECS内核，请充分评估升级内核对于相关业务及应用兼容性的风险，并且在升级前创建ECS快照以备不时之需
+            如果仍有疑问，请联系%s
             """ % (
                 kernel_version,
                 KERNEL_CONTACT),
@@ -388,13 +431,15 @@ class ConditionChecker(object):
             """
             建议将以下步骤复制保存后再执行操作
             请卸载所有使用挂载点%s的本地目录，再重新挂载：
-                1. 停止以下所有对挂载路径进行操作的应用（如果没有显示请跳过），kill前请根据实际业务情况评估影响
+                1. 停止以下所有对挂载路径进行操作的进程（如果没有请跳过），评估业务影响后，使用kill -9 <PID>停止进程
                         %s
-                2. 卸载所有相关本地挂载路径，如果返回“device is busy”，请确认上一步的所有进程已经被kill
+                2. 卸载所有相关挂载路径，如果返回“device is busy”，请确认上一步的所有进程已经被kill，并且所有相关容器已被停止
                         sudo umount %s
-                3. 确认所有相关本地挂载路径完成卸载，以下命令应该返回为空
+                3. 确认所有相关挂载路径完成卸载，以下命令应该返回为空
                         mount | grep %s
-                4. 执行以下命令，重新挂载以上所有目录（挂载命令已经加入noresvport）
+                4. 确认所有相关TCP连接已被回收，以下命令应该返回为空（如有残留连接，说明卸载前仍有进程或容器使用NAS，建议重启机器）
+                        ss -nt | grep ESTAB | grep -w 2049 | grep %s
+                5. 执行以下命令，重新挂载所有目录（挂载命令已经加入noresvport）
                         %s
             如果重新挂载出现相同问题，可能是遇到了客户端Linux的缺陷，请择机重启机器后再挂载
             """ % (
@@ -402,6 +447,7 @@ class ConditionChecker(object):
                 delimiter.join(fuser_str_list),
                 ' '.join(mountpoint_list),
                 mount_addr,
+                get_ip_of_hostname(mount_addr),
                 delimiter.join(mount_cmd_list)),
             colors.fg.blue)
         print(warning_msg)
@@ -665,7 +711,7 @@ class BadConnChecker(ConditionChecker):
         no_sys_port_occupied = MountParser.check_sys_port_occupied(output)
         if not no_sys_port_occupied:
             print(colormsg(
-                "存在没有使用noresvport的残留NFS连接，请在业务低峰期重启ECS修复",
+                "存在残留的NFS连接没有使用noresvport参数，可能是卸载NAS前，相关进程或容器没有全部停止，或触发了Linux的内核缺陷。为了避免后续挂载复用此连接，请在业务低峰期重启ECS回收残留连接，解决此问题",
                 colors.fg.red))
         return no_sys_port_occupied
 
@@ -674,7 +720,7 @@ class BadConnChecker(ConditionChecker):
         if self.need_repair:
             print(colormsg(
             """
-            存在残留的NFS连接没有使用noresvport，为了避免后续的挂载复用此连接，请在业务低峰期重启ECS，回收此连接
+            存在残留的NFS连接没有使用noresvport参数，请重启ECS解决此问题
             """,
                 colors.fg.blue))
         return False
@@ -684,6 +730,7 @@ class NfsMountHelper(object):
     def __init__(self):
         args_dict = self.parse_args()
         self.need_repair = args_dict['need_repair']
+        self.container_repair = args_dict['container_repair']
         self.check_list = self.prepare(args_dict)
 
     def parse_args(self):
@@ -693,10 +740,13 @@ class NfsMountHelper(object):
                              action="store_true")
         _parser.add_argument("-r", "--repair", help="显示ECS的修复方案",
                              action="store_true")
+        _parser.add_argument("-c", "--container", help="显示容器的修复方案",
+                             action="store_true")
         user_options = _parser.parse_args()
         args_dict = {}
         VERBOSE = user_options.verbose
         args_dict['need_repair'] = user_options.repair
+        args_dict['container_repair'] = user_options.container
         return args_dict
 
     def prepare(self, args_dict):
@@ -731,13 +781,16 @@ class NfsMountHelper(object):
                 "本台ECS无须处理noresvport问题",
                 colors.fg.green))
         else:
-            if not self.need_repair:
+            if not self.need_repair and not self.container_repair:
                 print(colormsg(
                     "如果您正使用ECS直接挂载NAS，请使用-r参数重新执行此脚本，查看详细解决方案",
                     colors.fg.orange))
-            print(colormsg(
-                "如果您正使用容器挂载NAS，请参考文档 https://yq.aliyun.com/articles/707169 处理，如有疑问请联系%s" % CONTAINER_CONTACT,
-                colors.fg.orange))
+            if not self.container_repair:
+                print(colormsg(
+                    "如果您正使用容器挂载NAS，请使用-c参数重新执行此脚本，查看详细解决方案",
+                    colors.fg.orange))
+            else:
+                recommend_container_solution()
             print(colormsg(
                 "请处理本台ECS的noresvport问题，完毕之后请再次运行此脚本，确认风险排除",
                 colors.fg.orange))
