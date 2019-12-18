@@ -138,7 +138,7 @@ def recommend_container_solution():
             以上两种方法，均使用新版的FlexVolume插件，挂载NAS时会自带noresvport参数，是最方便的处理方法
             如果您希望考虑其他方法，请参考文档 https://yq.aliyun.com/articles/707169 处理，如有疑问请联系%s
             """ % CONTAINER_CONTACT,
-        colors.fg.blue))
+        colors.fg.cyan))
 
 class MountParser:
     @staticmethod
@@ -402,14 +402,14 @@ class ConditionChecker(object):
             """ % (
                 kernel_version,
                 KERNEL_CONTACT),
-            colors.fg.blue))
+            colors.fg.cyan))
 
     def alarm_unmount_server(self, mount_info_dict, mount_addr):
         if mount_addr not in mount_info_dict \
            or not mount_info_dict[mount_addr]:
             print(colormsg(
                 "还有shell没退出曾经挂载过NFS文件系统的目录，如无法找到请重启机器后再挂载",
-                colors.fg.blue))
+                colors.fg.cyan))
             return
         mount_tuple_list = mount_info_dict[mount_addr]
         fuser_str_list = []
@@ -449,7 +449,7 @@ class ConditionChecker(object):
                 mount_addr,
                 get_ip_of_hostname(mount_addr),
                 delimiter.join(mount_cmd_list)),
-            colors.fg.blue)
+            colors.fg.cyan)
         print(warning_msg)
 
     def run(self):
@@ -502,7 +502,7 @@ class RootUserChecker(ConditionChecker):
                 """
                 此脚本需要使用root权限执行
                 """,
-                colors.fg.blue))
+                colors.fg.cyan))
         return os.geteuid() == 0
 
 
@@ -722,7 +722,7 @@ class BadConnChecker(ConditionChecker):
             """
             存在残留的NFS连接没有使用noresvport参数，请重启ECS解决此问题
             """,
-                colors.fg.blue))
+                colors.fg.cyan))
         return False
 
 
