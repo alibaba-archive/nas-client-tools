@@ -557,7 +557,7 @@ class ConditionChecker(object):
                         ss -nt | grep ESTAB | grep -w 2049 | grep %s
                 5. 执行以下命令，重新挂载所有目录（挂载命令已经加入noresvport）
                         %s
-            如果重新挂载出现相同问题，可能是遇到了客户端Linux的缺陷，请择机重启机器后再挂载
+            如果重新挂载出现相同问题，可能是遇到了客户端Linux的缺陷，请择机重启机器后再挂载。如有疑问，请联系%s
             """,
             """
             We recommend you save the following instructions before running the commands.
@@ -572,7 +572,7 @@ class ConditionChecker(object):
                         ss -nt | grep ESTAB | grep -w 2049 | grep %s
                 5. Run the following commands to re-mount all the paths ('noresvport' already included in the commands below).
                         %s
-            If the same issue persist after re-mounting, it is probably caused by a bug in the Linux kernel on the client side, please reboot ECS and try mounting again.
+            If the same issue persist after re-mounting, it is probably caused by a bug in the Linux kernel on the client side, please reboot ECS and try mounting again. If you have any questions, please contact %s
             """
         )
 
@@ -603,7 +603,8 @@ class ConditionChecker(object):
                 ' '.join(mountpoint_list),
                 mount_addr,
                 get_ip_of_hostname(mount_addr),
-                delimiter.join(mount_cmd_list)),
+                delimiter.join(mount_cmd_list),
+                GENERAL_CONTACT.to_lang(LANG)),
             colors.fg.cyan)
         print(warning_msg)
 
