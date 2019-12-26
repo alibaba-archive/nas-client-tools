@@ -70,8 +70,8 @@ param (
 function Get-ReferenceUrls()
 {
     $urls = @{
-        AlinasSmbFaq = "https://help.aliyun.com/knowledge_list/110787.html";
-        AlibabaCloudSmbFaq = "https://www.alibabacloud.com/help/faq-list/110787.htm";
+        AlinasSmbFaq = "https://help.aliyun.com/document_detail/112011.html";
+        AlibabaCloudSmbFaq = "https://www.alibabacloud.com/help/doc-detail/112011.html";
         AliyunChinaSupport = "https://cn.aliyun.com/service";
         AlibabaCloudIntlSupport = "https://www.alibabacloud.com/services";
         MsftSmbGuestAccess = "https://support.microsoft.com/en-us/help/4046019";
@@ -112,29 +112,37 @@ function Get-LocaleMessages([string]$localeChoice)
         CurrSys = "Current system version: {0} ({1})";
         CheckRoles = "Check server roles and features";
         CheckServices = "Check local services";
+        CheckNetComponents = "Check network components";
         CheckMountTarget = "Check mount target: {0}";
         # Next step strings
         NextStep = "The following {0} action(s) are recommended:";
         NoNextStep = "No suggested actions at this point.";
         NsSysReqNotMet = "Access NAS (SMB protocol) from {0} ({1}) or newer systems";
-        NsNoGuestAccess = "Guest auth is required to access SMB NAS, please configure the Registry value: `n{0}`n   See Microsoft support document for details:`n     {1}";
+        NsNoGuestAccess = "Guest auth is required to access SMB NAS file system, please configure the Registry value: `n{0}`n   See Microsoft support document for details:`n     {1}";
         NsServiceNotRunning = "Key local services not running. Please search and run `"services.msc`", then start the following service(s):`n{0}";
         NsServiceNotRunningTpl = "   - Service: {0}";
-        NsHasNfsService = "The installed NFS services may affect the performance of SMB NAS. If you do not need NFS service, please consider:`n{0}";
+        NsLanmanNotInProviderOrder = "LanmanWorkstation is not set in ProviderOrder registry. Add LanmanWorkstation to the Registry entry:`n{0}";
+        NsHasNfsService = "The installed NFS services may affect the performance of SMB NAS file system. If you do not need NFS service, please consider:`n{0}";
         NsHasNfsService1 = "   - Remove '{0}' role from the system";
         NsHasNfsService2 = "   - Delete Nfsnp from the Registry entry:`n{0}";
+        NsMissingNetComponents = "Key network components not installed. Please install the following component(s):`n{0}";
+        NsMissingNetComponentsMsclient = "   - Client for Microsoft Networks (ms_msclient)";
+        NsMissingNetComponentsMsserver = "   - File and Printer Sharing for Microsoft Networks (ms_server)";
+        NsDisabledNetComponents = "Key network components disabled. Please enable the following component(s):`n{0}";
         NsCorrectMountTarget = "Please provide correct mount target address (format: {0})";
         NsBadConnection = "Failed to ping {0}, possible reasons are:`n   - mount target address typo`n   - client and mount target are not in the same VPC`n   - something is wrong with inter-VPC or VPN connection`n   - something is wrong with DNS service";
         NsBadSmbConnection1 = "NAS service is not available via mount target ({0}), please double-check mount point address";
         # Mount suggestions
-        MountFailSuggestion = "* Note: common reasons for SMB NAS share mount failures are:`n   1) network connectivity`n   2) unsupported client system version or settings`n   3) try to mount a NFS NAS as an SMB NAS`n   4) inproper NAS permission group settings`n   5) an overdue account";
+        MountFailSuggestion = "* Note: common reasons for SMB NAS file system mount failures are:`n   1) network connectivity`n   2) unsupported client system version or settings`n   3) try to mount a NFS NAS as an SMB NAS`n   4) inproper NAS permission group settings`n   5) an overdue account";
         MountFailDoc = "  View detailed solutions in official documentation:`n   {0}";
         # Mount instructions
         FixGuestAccessFirst = "* Before running the following mount commands, please follow recommended action to allow guest access to SMB";
         FixLocalServices = "* Before running the following mount commands, please follow recommended action to start key local services via services.msc";
-        MountRef = "Please refer to the following example commands to mount your SMB NAS volume:";
+        FixNetComponents = "* Before running the following mount commands, please follow recommended action to enable key network components";
+        MountHelpDoc = "* If fails to mount, please find solutions in document: {0}`n";
+        MountRef = "Please refer to the following example commands to mount your SMB NAS file system:";
         MountRefNetUse = " - Mount SMB NAS file system to a volume label (Z: in the example command):";
-        MountRefMklink = " - Mount SMB NAS file system as a sub-directory (symbolic link to C:\myshare in the example command):";
+        MountRefMklink = "`n - Mount SMB NAS file system as a sub-directory (symbolic link to C:\myshare in the example command):";
         PsMklinkWarning = "    * Note: since mklink is not a PowerShell cmdlet and requires administrative privileges , please run command in Command Prompt (cmd.exe) as Administrator";
         CmdCommandPromptAdmin = "    Admin: Command Prompt> ";
         CmdPowershellAdmin = "    Admin: PowerShell> ";
@@ -159,33 +167,41 @@ function Get-LocaleMessages([string]$localeChoice)
         Pass = "{0} ...通过";
         Attention = "{0} ...注意";
         Fail = "{0} ...未通过";
-        SysReqNotMet = "阿里云文件存储 NAS SMB 协议要求客户端运行{0} ({1})或更新版本的操作系统";
+        SysReqNotMet = "阿里云文件存储 NAS SMB 协议文件系统要求客户端运行{0} ({1})或更新版本的操作系统";
         CurrSys = "当前系统版本: {0} ({1})";
         CheckServices = "检查相关系统本地服务";
         CheckRoles = "检查相关系统角色与服务";
+        CheckNetComponents = "检查相关网络组件";
         CheckMountTarget = "检查挂载点: {0}";
         # Next step strings
         NextStep = "推荐进行以下{0}个操作:";
         NoNextStep = "暂时没有推荐的下一步操作。";
-        NsSysReqNotMet = "使用{0} ({1})或更新版本的操作系统访问 SMB 协议 NAS";
+        NsSysReqNotMet = "使用{0} ({1})或更新版本的操作系统访问 SMB 协议 NAS 文件系统";
         NsNoGuestAccess = "需要系统允许通过 Guest 身份访问 NAS，请修改注册表项: `n{0}`n   详见微软官方支持文档:`n     {1}";
         NsServiceNotRunning = "关键系统本地服务并未启动，请搜索并运行`"services.msc`"，然后启动以下服务:`n{0}";
         NsServiceNotRunningTpl = "   - 服务: {0}";
+        NsLanmanNotInProviderOrder = "LanmanWorkstation并未在注册表中正确配置。请在以下注册表项中添加 LanmanWorkstation:`n{0}";
         NsHasNfsService = "系统中已安装的 NFS 相关服务可能影响 SMB 协议 NAS 的性能。如果您并不需要 NFS 服务，请考虑:`n{0}";
         NsHasNfsService1 = "   - 从服务器角色中移除'{0}'";
         NsHasNfsService2 = "   - 在以下注册表项中删除 Nfsnp:`n{0}";
+        NsMissingNetComponents = "关键网络组件并未安装，请安装以下组件:`n{0}";
+        NsMissingNetComponentsMsclient = "   - Microsoft 网络客户端 (ms_msclient)";
+        NsMissingNetComponentsMsserver = "   - Microsoft 网络的文件和打印机共享 (ms_server)";
+        NsDisabledNetComponents = "关键网络组件未启用，请启用以下组件:`n{0}";
         NsCorrectMountTarget = "请提供正确格式的挂载点地址 (格式: {0})";
         NsBadConnection = "Ping 挂载点失败 ({0})，请检查下列可能的问题:`n   - 挂载点地址拼写错误`n   - 客户端与挂载点不在同一个 VPC`n   - 跨 VPC 连接或 VPN 连接存在问题`n   - DNS 服务故障，请检查配置";
         NsBadConnection1 = "挂载点未发现 NAS 服务 ({0})，请检查挂载点地址";
         # Mount suggestions
-        MountFailSuggestion = "* 提示: SMB NAS挂载失败的常见原因为:`n   1) 网络不通`n   2) 客户端系统版本或设置问题`n   3) 错以SMB NAS挂载方式挂载NFS NAS`n   4) NAS权限组设置问题`n   5) NAS服务欠费";
+        MountFailSuggestion = "* 提示: SMB协议文件系统挂载失败的常见原因为:`n   1) 网络不通`n   2) 客户端系统版本或设置问题`n   3) 错以SMB文件系统挂载方式挂载NFS文件系统`n   4) NAS权限组设置问题`n   5) NAS服务欠费";
         MountFailDoc = "  详见相关官方文档: {0}";
         # Mount instructions
         FixGuestAccessFirst = "* 运行以下命令之前，请先按推荐操作修改注册表以允许通过 Guest 身份访问 NAS";
         FixLocalServices = "* 运行以下命令之前，请先按推荐操作启动关键系统本地服务";
+        FixNetComponents = "* 运行以下命令之前，请先按推荐操作启用关键网络组件";
+        MountHelpDoc = "* 如果依旧挂载失败，请参考帮助文档排查: {0}`n";
         MountRef = "请参考以下命令挂载 SMB 协议 NAS 文件系统:";
-        MountRefNetUse = " - 挂载 SMB NAS 文件系统到盘符 (命令范例中为 Z:):";
-        MountRefMklink = " - 挂载 SMB NAS 文件系统到子目录 (命令范例中为指向 C:\myshare 的符号链接):";
+        MountRefNetUse = " - 挂载 SMB 协议 NAS 文件系统到盘符 (命令范例中为 Z:):";
+        MountRefMklink = "`n - 挂载 SMB 协议 NAS 文件系统到子目录 (命令范例中为指向 C:\myshare 的符号链接):";
         PsMklinkWarning = "    * 注意: mklink并不是一个PowerShell指令且需要管理员权限，需以管理员身份使用命令提示符 (cmd.exe) 运行";
         CmdCommandPromptAdmin = "    管理员: 命令提示符> ";
         CmdPowershellAdmin = "    管理员: PowerShell> ";
@@ -301,13 +317,15 @@ function Check-SystemRequirement()
 # Windows 2008 does not have Test-NetConnection
 function Test-RemotePort([string]$computerName, [int]$port)
 {
-    try {
+    try
+    {
         $ip = [System.Net.Dns]::GetHostAddresses($computerName) | select-object IPAddressToString -ExpandProperty  IPAddressToString
         if($ip.GetType().Name -eq "Object[]")
         {
             $ip = $ip[0]
         }
-    } catch {
+    } catch
+    {
         return $false
     }
     $tcpClient = New-Object Net.Sockets.TcpClient
@@ -442,15 +460,102 @@ function Check-LocalServices()
             }
             $actionString += $messages.NsServiceNotRunningTpl -f $srvName
         }
-        $failMsg = $messages.Fail -f $messages.CheckServices
-        Write-Host $failMsg -ForegroundColor Red
         Add-NextStep ($messages.NsServiceNotRunning -f $actionString)
         $global:localServiceNeeded = $true
+    }
+
+    $registryPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order"
+    $registryName = "ProviderOrder"
+    $registryObj = Get-ItemProperty -Path $registryPath
+    $npOrder = $registryObj.$registryName
+    if (-Not ($npOrder -imatch "LanmanWorkstation"))
+    {
+        $actionString = ""
+        $registryString = "      [{0}]`n      {1}=REG_SZ:{2}" -f $registryPath, $registryName, $npOrder
+        Add-NextStep ($messages.NsLanmanNotInProviderOrder -f $registryString)
+        $global:lanmanNotInProviderOrder = $true
+    }
+
+    if ($global:localServiceNeeded -Or $global:lanmanNotInProviderOrder)
+    {
+        $failMsg = $messages.Fail -f $messages.CheckServices
+        Write-Host $failMsg -ForegroundColor Red
     }
     else
     {
         $passMsg = $messages.Pass -f $messages.CheckServices
         Write-Host $passMsg -ForegroundColor Green
+    }
+}
+
+function Check-NetComponent()
+{
+    # ms_msclient: Client for Microsoft Networks
+    # ms_server: File and Printer Sharing for Microsoft Networks
+    $actionString = ""
+    $componentList = netcfg -s n
+    if (-Not ($componentList -imatch "ms_msclient"))
+    {
+        $actionString += $messages.NsMissingNetComponentsMsclient
+    }
+    if (-Not ($componentList -imatch "ms_server"))
+    {
+        if ($actionString -ne "")
+        {
+            $actionString += "`n"
+        }
+        $actionString += $messages.NsMissingNetComponentsMsserver
+    }
+
+    if ($actionString -ne "")
+    {
+        $failMsg = $messages.Fail -f $messages.CheckNetComponents
+        Write-Host $failMsg -ForegroundColor Red
+        Add-NextStep ($messages.NsMissingNetComponents -f $actionString)
+        $global:netComponentNeeded = $true
+    }
+    else
+    {
+        # check if components are enabled, not supported in windows 2008r2
+        try
+        {
+            $components = Get-NetAdapterBinding
+        }
+        catch
+        {
+            $components = [System.Collections.ArrayList]@()
+        }
+        foreach ($comp in $components)
+        {
+            if (($comp.ComponentID -eq "ms_msclient") -And (-Not $comp.Enabled))
+            {
+                if ($actionString -ne "")
+                {
+                    $actionString += "`n"
+                }
+                $actionString += $messages.NsMissingNetComponentsMsclient
+            }
+            if (($comp.ComponentID -eq "ms_server") -And (-Not $comp.Enabled))
+            {
+                if ($actionString -ne "")
+                {
+                    $actionString += "`n"
+                }
+                $actionString += $messages.NsMissingNetComponentsMsserver
+            }
+        }
+        if ($actionString -ne "")
+        {
+            $failMsg = $messages.Fail -f $messages.CheckNetComponents
+            Write-Host $failMsg -ForegroundColor Red
+            Add-NextStep ($messages.NsDisabledNetComponents -f $actionString)
+            $global:netComponentNeeded = $true
+        }
+        else
+        {
+            $passMsg = $messages.Pass -f $messages.CheckNetComponents
+            Write-Host $passMsg -ForegroundColor Green
+        }
     }
 }
 
@@ -483,6 +588,18 @@ function Print-MountCommands()
     if ($global:localServiceNeeded)
     {
         Write-Host $messages.FixLocalServices -ForegroundColor Red
+    }
+    if ($global:netComponentNeeded)
+    {
+        Write-Host $messages.FixNetComponents -ForegroundColor Red
+    }
+    if ($localeChoice -eq "zh-CN")
+    {
+        Write-Host ($messages.MountHelpDoc -f $references.AlinasSmbFaq) -ForegroundColor Yellow
+    }
+    else
+    {
+        Write-Host ($messages.MountHelpDoc -f $references.AlibabaCloudSmbFaq) -ForegroundColor Yellow
     }
 
     Write-Host $messages.MountRefNetUse -ForegroundColor Cyan
@@ -541,6 +658,8 @@ function Print-Suggestions([string]$localeChoice)
 # Registry action required
 $global:regeditNeeded = $false
 $global:localServiceNeeded = $false
+$global:netComponentNeeded = $false
+$global:lanmanNotInProviderOrder = $false
 # System output encoding
 if ($Locale -eq "auto")
 {
@@ -595,6 +714,9 @@ try
         Print-NextSteps
         exit 1
     }
+
+    # Check network components
+    Check-NetComponent
 
     # Check local services
     Check-LocalServices
