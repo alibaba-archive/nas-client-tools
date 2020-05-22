@@ -15,8 +15,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-set -e
-
 outfile=$1
 [ -z $outfile ] && echo "Usage: sh $0 <output_file>" && exit 1
 [ -f $outfile ] && echo "Please remove file '$outfile' manually and run the script again" && exit 1
@@ -102,5 +100,3 @@ if $RUN_FIO; then
 fi
 
 echo "Scanning finished. Please send '$outfile' to the staff of Alibaba Cloud NAS Service."
-
-set +e
