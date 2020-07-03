@@ -27,3 +27,20 @@ python2.7 check_alinas_nfs_mount.py file-system-id.region.nas.aliyuncs.com:/ /mn
 请下载到Windows系统的ECS客户端执行。命令格式：
 
 .\alinas_smb_windows_inspection.ps1 -MountAddress abcde-123.region-id.nas.aliyuncs.com -Locale zh-CN
+
+### data_coldness_analysis
+#### analyze_data_coldness.py
+NAS分层策略分析工具。
+根据分层策略（TieringPolicies）生成每个目录下的大于等于64KB的数据的统计，包括（size, size_ratio, count, count_ratio），然后按照分层策略打印出每一层（总共dir_levels层）冷数据量（size）排名最高的几个（top_n）目录。
+
+比如默认的分层策略是(Atime, 14-day)，则超过14天未访问的数据则为冷数据。可以配多个分层策略一次性扫描出多组结果
+默认打印三层目录（dir_levels=3）。打印排序后的前两名（top_n=2）
+第一层，即如果配分层策略在根目录上，>=64KB的符合分层策略的冷数据量（size），以及它的size, size_ratio, count, count_ratio
+第二层，即根目录下第一层所有目录，按>=64KB的符合分层策略的冷数据量（size）排序，打印出前两名的（path，size, size_ratio, count, count_ratio）
+第三层，即根目录下第二层所有目录，按>=64KB的符合分层策略的冷数据量（size）排序，打印出前两名的（path，size, size_ratio, count, count_ratio）
+默认排序按照冷数据量（Size）进行排序，还可以按照SizeRatio, Count, CountRatio排序
+
+注意：脚本为单线程扫描。如果觉得速度不够快，可以启动多个，每个扫描不同的target_dir即可
+
+#### create_simple_coldness_data.py
+生成简单的测试数据
