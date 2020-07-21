@@ -388,24 +388,41 @@ function Check-NfsService()
 {
     $actionString = ""
 
-    Import-Module ServerManager
+    try
+    {
+        Import-Module ServerManager -ErrorAction SilentlyContinue
 
-    # Check FS-NFS-Service* role
-    $nfsServices = Get-WindowsFeature FS-NFS-Service*
-    if ($nfsServices.Count -gt 0 -And $nfsServices[0].Installed)
-    {
-        $actionString = $messages.NsHasNfsService1 -f $nfsServices[0].DisplayName
-    }
-    # Check NFS-Client feature
-    $nfsClient = Get-WindowsFeature NFS-Client
-    if ($nfsClient.Count -gt 0 -And $nfsServices[0].Installed)
-    {
-        if ($actionString -ne "")
+        # Check FS-NFS-Service* role
+        $nfsServices = Get-WindowsFeature FS-NFS-Service*
+        if ($nfsServices.Count -gt 0 -And $nfsServices[0].Installed)
         {
-            $actionString += "`n"
+            $actionString = $messages.NsHasNfsService1 -f $nfsServices[0].DisplayName
         }
-        $actionString += $messages.NsHasNfsService1 -f $nfsClient[0].DisplayName
+        # Check NFS-Client feature
+        $nfsClient = Get-WindowsFeature NFS-Client
+        if ($nfsClient.Count -gt 0 -And $nfsServices[0].Installed)
+        {
+            if ($actionString -ne "")
+            {
+                $actionString += "`n"
+            }
+            $actionString += $messages.NsHasNfsService1 -f $nfsClient[0].DisplayName
+        }
     }
+    catch
+    {
+        # Win 10 does not have ServerManager
+        $nfsClient = Get-WindowsOptionalFeature -Online -FeatureName ClientForNFS*
+        if ($nfsClient.Count -gt 0 -And $nfsServices.State -eq "Enabled")
+        {
+            if ($actionString -ne "")
+            {
+                $actionString += "`n"
+            }
+            $actionString += $messages.NsHasNfsService1 -f $nfsClient[0].DisplayName
+        }
+    }
+
     # Check registry
     $registryPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order"
     $registryName = "ProviderOrder"
