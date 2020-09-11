@@ -97,6 +97,26 @@ if $RUN_FIO; then
     done
     # Final Check for Network Quality
     run 'netstat -s | grep fast   # detailed info of dropped and retransmitted packets'
+else
+    # IO Performance and Network Quality
+    run "for i in {1..$interval}; do echo ''; echo '============================'; date; echo '============================'; sleep 1; done" '&'
+    sleep 0.1
+    run "nfsiostat 1 $interval" '&'
+    sleep 0.1
+    run "mpstat -P ALL 1 $interval" '&'
+    i=0
+    while true; do
+        [ $i = $((interval)) ] && break;
+        i=$((i+1));
+        run 'cat /sys/kernel/debug/sunrpc/rpc_clnt/[0-9]/tasks | wc -l'
+        run 'cat /sys/kernel/debug/sunrpc/rpc_clnt/[0-9]/tasks | grep backlog | wc -l'
+        run 'cat /sys/kernel/debug/sunrpc/rpc_clnt/[0-9]/tasks | grep sending | wc -l'
+        run 'cat /sys/kernel/debug/sunrpc/rpc_clnt/[0-9]/tasks | grep pending | wc -l'
+        sleep 1
+    done
+    wait
+    # Final Check for Network Quality
+    run 'netstat -s | grep fast   # detailed info of dropped and retransmitted packets'
 fi
 
 echo "Scanning finished. Please send '$outfile' to the staff of Alibaba Cloud NAS Service."
