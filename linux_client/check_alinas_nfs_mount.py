@@ -36,6 +36,7 @@ KERNEL_CONTACT = "NAS研发团队（钉钉群号：23177020）"
 SYSTEM_PORT_LIMIT = 1024
 NFS_DEFAULT_PORT = 2049
 NAS_ALIYUN_SUFFIX = ".nas.aliyuncs.com"
+NAS_ALIYUN_PRIVATE_SUFFIX = ".shuguang.com"
 NAS_ALIYUN_EXTREME_SUFFIX = ".extreme" + NAS_ALIYUN_SUFFIX
 MOUNT_FILENAME = "/proc/mounts"
 NFS_SUPPORTED_VERS = {
@@ -327,6 +328,8 @@ class MountParser:
                 "目前此脚本还不支持极速型NAS挂载排查，跳过自动检查",
                 colors.fg.orange))
         elif server.endswith(NAS_ALIYUN_SUFFIX):
+            return True
+        elif server.endswith(NAS_ALIYUN_PRIVATE_SUFFIX):
             return True
         return False
 
