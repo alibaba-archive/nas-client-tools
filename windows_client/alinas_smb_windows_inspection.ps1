@@ -762,7 +762,7 @@ function Set-ADControllerSettings()
     }
     catch
     {
-        $UserdomainTrimed = $Userdomain.Trim(".com")
+        $UserdomainTrimed = $Userdomain.TrimEnd("com").TrimEnd(".")
         $command = "dsadd user CN=alinas,DC=$UserdomainTrimed,DC=com -samid alinas -display `"Alibaba Cloud NAS Service Account`" -pwd tHePaSsWoRd123 -pwdneverexpires yes"
         if (-Not (Invoke-PromptCommand $command))
         {
@@ -806,7 +806,7 @@ function Check-Userdomain()
 
 function Check-SetSpnAlinas([string]$domainCom)
 {
-    $domain = $domainCom.Trim(".com")
+    $domain = $domainCom.TrimEnd("com").TrimEnd(".")
     try
     {
         $result = Invoke-Expression 'setspn alinas'
