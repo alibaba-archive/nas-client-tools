@@ -51,10 +51,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 .SYNOPSIS
     Test NAS (SMB protocol) service compatibility and detect connection problems
 .DESCRIPTION
-    Run alinas_smb_windows_inspection powershell script to detect:
-     1. The NAS (SMB protocol) compatibility of the local computer
-     2. Server roles and features that might affect the performance of NAS (SMB protocol)
-     3. Connection problems regarding the provided mount target address
+    1. Run alinas_smb_windows_inspection powershell script to detect:
+     a. The NAS (SMB protocol) compatibility of the local computer
+     b. Server roles and features that might affect the performance of NAS (SMB protocol)
+     c. Connection problems regarding the provided mount target address
+    2. The script will try to fix the issues found
 
     Usage example:
       .\alinas_smb_windows_inspection.ps1 -MountAddress abcde-123.region-id.nas.aliyuncs.com -Locale zh-CN
@@ -64,7 +65,19 @@ param (
     # Specify the mount target address to test in the format of "<MOUNT_TARGET_ID>.<REGION_ID>.nas.aliyuncs.com"
     [string]$MountAddress = "",
     # Default is "auto", put "zh-CN" to output messages in Chinese
-    [string]$Locale = "auto"
+    [string]$Locale = "auto",
+    # Check NAS SMB AD/ACL setup. Default is $false
+    [bool]$CheckAD = $false,
+    # Config NAS SMB AD/ACL setup. Default is $false
+    # Official doc: https://help.aliyun.com/document_detail/154930.html
+    [bool]$ConfigAD = $false,
+    # Mount as SYSTEM account. 
+    # Reference: https://developer.aliyun.com/article/775050
+    [bool]$InvokeMount = $false,
+    [bool]$SystemMount = $false,
+    [string]$Username = "",
+    [string]$Userdomain = "",
+    [string]$Password = ""
 )
 
 function Get-ReferenceUrls()
@@ -114,9 +127,16 @@ function Get-LocaleMessages([string]$localeChoice)
         CheckServices = "Check local services";
         CheckNetComponents = "Check network components";
         CheckMountTarget = "Check mount target: {0}";
+        InvokeMountTarget = "Mount: {0}";
         # Next step strings
         NextStep = "The following {0} action(s) are recommended:";
         NoNextStep = "No suggested actions at this point.";
+        NextCommand = "Try to fix with following {0} commands:";
+        RunCommand = "Run following command: {0}";
+        IgnoreCommand = "Ignore running command: {0}";
+        RunCommandFailed = "Run command: {0} failed";
+        Yes = "Yes";
+        No = "No";
         NsSysReqNotMet = "Access NAS (SMB protocol) from {0} ({1}) or newer systems";
         NsNoGuestAccess = "Guest auth is required to access SMB NAS file system, please configure the Registry value: `n{0}`n   See Microsoft support document for details:`n     {1}";
         NsServiceNotRunning = "Key local services not running. Please search and run `"services.msc`", then start the following service(s):`n{0}";
@@ -131,7 +151,45 @@ function Get-LocaleMessages([string]$localeChoice)
         NsDisabledNetComponents = "Key network components disabled. Please enable the following component(s):`n{0}";
         NsCorrectMountTarget = "Please provide correct mount target address (format: {0})";
         NsBadConnection = "Failed to ping {0}, possible reasons are:`n   - mount target address typo`n   - client and mount target are not in the same VPC`n   - something is wrong with inter-VPC or VPN connection`n   - something is wrong with DNS service";
-        NsBadSmbConnection1 = "NAS service is not available via mount target ({0}), please double-check mount point address";
+        NsBadSmbConnection = "NAS SMB service is not available via mount target ({0}), please double-check mount point address";
+        NoAvailableDriveLetter = "All drive letters from a to z are occupied. Please release some and try again";
+        NotADDomainController = "Not AD domain controller. Ignore ADDC checkings";
+        UserDomainShouldHaveDotCom = "Userdomain: {0} should end with .com";
+        ADDomainMismatch = "ADDomain mismatch: AD domain: {0}, user input domain: {1}";
+        IncorrectADUsernameOrPassword = "Incorrect AD username or password. Input username: {0}, input password: {1}";
+        IncorrectSetSpn = "Incorrect setspn alinas result";
+        CorrectSetSpn = "To setspn correctly, please refer to: https://help.aliyun.com/document_detail/154930.html";
+        SetSpnLessThanTwoLines = "setspn result: {0}, less than 2 lines";
+        UnexpectedSetSpnFirstLine = "setspn result: {0}, first line: {1} is not: Registered ServicePrincipalNames for CN=alinas,DC=domain,DC=com";
+        NoCifsMountAddress = "setspn result doesn't have cifs/{0}";
+        StartADControllerCheck = "Start ADController checking";
+        EndADControllerCheck = "ADController checking is completed. AD domain name, username and setspn result are correct. If mount failed or identity authentication failed, it could be keytab errors. Please refer to: https://help.aliyun.com/document_detail/154930.html";
+        StartADClientCheck = "Start ADClient checking";
+        PingADDomainFailed = "This client failed to ping AD domain, possibly due to DNS issue. DNS should include route to ADController. Current DNS: {0}";
+        KerbeorsPortFailed = "Kerberos port TCP 88 cannot be connected. ADDomain: {0}";
+        LDAPPortFailed = "LDAP port TCP 389 cannot be connected. ADDomain: {0}";
+        LDAPGlobalCatalogPortFailed = "LDAPGlobalCatalog port TCP 3268 cannot be connected. ADDomain: {0}";
+        EndADClientCheck = "ADClient checking is completed. AD domain name, username are correct. If mount failed or identity authentication failed, it could be keytab errors. Please refer to: https://help.aliyun.com/document_detail/154930.html";
+        StartSettingADController = "Start setting ADController. Following official doc: https://help.aliyun.com/document_detail/154930.html";
+        EmptyDomainForADControllerSettings = "AD domain is empty. Cannot config ADController";
+        ConfigADControllerManuallyFor2008R2 = "2008R2 AD Controller setup is complicated, please follow the official doc to setup manually";
+        InstallADDSFailed = "Install ADDS feature failed";
+        InstallDNSFailed = "Install DNS feature failed";
+        InstallADDSandDNSFailed = "Install ADDS and DNS roles failed";
+        InstallADDSForestFailed = "Install ADDS forest failed. Failed to create AD domain";
+        GenerateKeytabFailed = "Generate keytab failed. MountAddress: {0}, ADDomain: {1}";
+        EndSettingADController = "Finish setting ADController. Please upload keytab file c:\nas-mount-target.keytab to NAS console to finish connecting AD and NAS SMB. After that you can use AD user to mount NAS SMB";
+        StartSystemMount = "Start SYSTEM mount. Reference: https://developer.aliyun.com/article/775050";
+        EmptyUserinfoForSystemMountOnWin2016OrLater = "Empty Username or Password input for SYSTEM mount on Windows 2016 or later. Fail to proceed";
+        CreateMyMountBatFailed = "Create my_mount.bat file failed";
+        RunSystemMountTaskFailed = "Run SYSTEM mount task failed";
+        CreateSystemMountTaskFailed = "Create SYSTEM mount task failed";
+        EndSystemMount = "Finish SYSTEM mount";
+        SkipSystemMount = "SYSTEM mount is skipped because MountAddress: {0} is invalid";
+        SkipMount = "Mount is skipped because MountAddress: {0} is invalid";
+        SkipNextCommands = "Total fixing commands: {0}, executed commands: {1}. {2} number of fixing commands are skipped to execute";
+        PrintException = "An error occurred: `n{0}`nException:`n{1}";
+        PrintEncodingError = "`n!! NOTICE: console output encoding has been changed to {0}`n- Run the following command to recover original console output encoding {1}:`n`t[System.Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding({2})";
         # Mount suggestions
         MountFailSuggestion = "* Note: common reasons for SMB NAS file system mount failures are:`n   1) network connectivity`n   2) unsupported client system version or settings`n   3) try to mount a NFS NAS as an SMB NAS`n   4) inproper NAS permission group settings`n   5) an overdue account";
         MountFailDoc = "  View detailed solutions in official documentation:`n   {0}";
@@ -173,9 +231,16 @@ function Get-LocaleMessages([string]$localeChoice)
         CheckRoles = "检查相关系统角色与服务";
         CheckNetComponents = "检查相关网络组件";
         CheckMountTarget = "检查挂载点: {0}";
+        InvokeMountTarget = "挂载: {0}";
         # Next step strings
         NextStep = "推荐进行以下{0}个操作:";
         NoNextStep = "暂时没有推荐的下一步操作。";
+        NextCommand = "尝试运行以下{0}个命令进行修复:";
+        RunCommand = "运行以下命令: {0}";
+        IgnoreCommand = "忽略该命令: {0}, 不运行";
+        RunCommandFailed = "运行命令: {0} 失败";
+        Yes = "是";
+        No = "否";
         NsSysReqNotMet = "使用{0} ({1})或更新版本的操作系统访问 SMB 协议 NAS 文件系统";
         NsNoGuestAccess = "需要系统允许通过 Guest 身份访问 NAS，请修改注册表项: `n{0}`n   详见微软官方支持文档:`n     {1}";
         NsServiceNotRunning = "关键系统本地服务并未启动，请搜索并运行`"services.msc`"，然后启动以下服务:`n{0}";
@@ -190,7 +255,45 @@ function Get-LocaleMessages([string]$localeChoice)
         NsDisabledNetComponents = "关键网络组件未启用，请启用以下组件:`n{0}";
         NsCorrectMountTarget = "请提供正确格式的挂载点地址 (格式: {0})";
         NsBadConnection = "Ping 挂载点失败 ({0})，请检查下列可能的问题:`n   - 挂载点地址拼写错误`n   - 客户端与挂载点不在同一个 VPC`n   - 跨 VPC 连接或 VPN 连接存在问题`n   - DNS 服务故障，请检查配置";
-        NsBadConnection1 = "挂载点未发现 NAS 服务 ({0})，请检查挂载点地址";
+        NsBadSmbConnection = "挂载点未发现 NAS SMB 服务 ({0})，请检查挂载点地址";
+        NoAvailableDriveLetter = "盘符a-z都被占用. 请释放任意盘符后再重试";
+        NotADDomainController = "不是AD服务器, 跳过AD服务器设置检查";
+        ADDomainMismatch = "ADDomain不匹配: ADDomain: {0}, 用户输入Domain: {1}";
+        UserDomainShouldHaveDotCom = "用户AD域: {0}, 需要有.com结尾";
+        IncorrectADUsernameOrPassword = "AD用户名或密码不正确. 用户名: {0}, 密码: {1}";
+        IncorrectSetSpn = "setspn alinas命令结果不正确";
+        CorrectSetSpn = "正确setspn配置请参考: https://help.aliyun.com/document_detail/154930.html";
+        SetSpnLessThanTwoLines = "setspn输出结果: {0}, 行数小于2";
+        UnexpectedSetSpnFirstLine = "setspn结果: {0}, 第一行: {1} 不等于: Registered ServicePrincipalNames for CN=alinas,DC=domain,DC=com";
+        NoCifsMountAddress = "setspn结果不包含cifs/{0}";
+        StartADControllerCheck = "开始AD服务端配置检查";
+        EndADControllerCheck = "AD服务端配置检查结束. AD域名, 用户名, setspn配置正常. 如果挂载失败或者身份认证错误, 可能是keytab生成或者上传出错. 请参考: https://help.aliyun.com/document_detail/154930.html";
+        StartADClientCheck = "开始AD客户端配置检查";
+        PingADDomainFailed = "客户端Ping不到AD域, 连接不成功. 可能是DNS问题. DNS需能连接到ADController. DNS: {0}";
+        KerbeorsPortFailed = "Kerberos接口TCP 88无法连接. AD域: {0}";
+        LDAPPortFailed = "LDAP接口TCP 389无法连接. AD域: {0}";
+        LDAPGlobalCatalogPortFailed = "LDAPGlobalCatalog接口TCP 3268无法连接. AD域: {0}";
+        EndADClientCheck = "AD客户端检查结束。AD域名、用户名正常。如果挂载失败或者身份认证错误，可能是keytab生成或者上传出错。请参考: https://help.aliyun.com/document_detail/154930.html";
+        StartSettingADController = "开始配置ADController. 参考官方文档: https://help.aliyun.com/document_detail/154930.html";
+        EmptyDomainForADControllerSettings = "AD域名为空，无法配置ADController";
+        ConfigADControllerManuallyFor2008R2 = "2008R2 AD控制器安装比较复杂，请参考官方文档步骤自行配置";
+        InstallADDSFailed = "安装ADDS功能失败";
+        InstallDNSFailed = "安装DNS功能失败";
+        InstallADDSandDNSFailed = "安装ADDS和DNS角色失败";
+        InstallADDSForestFailed = "安装ADDS森林失败. 创建AD域失败";
+        GenerateKeytabFailed = "生成keytab失败. 挂载点: {0}, AD域名: {1}";
+        EndSettingADController = "完成ADController设置. 请上传keytab文件c:\nas-mount-target.keytab到控制台, 完成AD与NAS SMB的连接. 之后即可使用AD身份挂载NAS SMB";
+        StartSystemMount = "开始SYSTEM账号挂载. 参考文档: https://developer.aliyun.com/article/775050";
+        EmptyUserinfoForSystemMountOnWin2016OrLater = "Userdomain或者Username或者Password为空, 导致Windows2016或者更新版本无法SYSTEM挂载";
+        CreateMyMountBatFailed = "创建my_mount.bat文件失败";
+        RunSystemMountTaskFailed = "运行SYSTEM挂载启动任务失败";
+        CreateSystemMountTaskFailed = "创建SYSTEM挂载启动任务失败";
+        EndSystemMount = "完成SYSTEM挂载";
+        SkipSystemMount = "跳过SYSTEM挂载，因为MountAddress: {0} 不合法";
+        SkipMount = "跳过挂载，因为MountAddress: {0} 不合法";
+        SkipNextCommands = "总修复命令数: {0}, 已运行修复命令数: {1}. {2} 个修复命令跳过执行";
+        PrintException = "发生错误: `n{0}`n异常Exception:`n{1}";
+        PrintEncodingError = "`n!! 注意: 控制台输出编码变成了 {0}`n- 运行下面代码将输出编码还原为 {1}:`n`t[System.Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding({2})";
         # Mount suggestions
         MountFailSuggestion = "* 提示: SMB协议文件系统挂载失败的常见原因为:`n   1) 网络不通`n   2) 客户端系统版本或设置问题`n   3) 错以SMB文件系统挂载方式挂载NFS文件系统`n   4) NAS权限组设置问题`n   5) NAS服务欠费";
         MountFailDoc = "  详见相关官方文档: {0}";
@@ -258,6 +361,11 @@ function Add-NextStep([string]$content)
     [void]$nextSteps.Add($content)
 }
 
+function Add-NextCommand([string]$command)
+{
+    [void]$nextCommands.Add($command)
+}
+
 function Check-SystemRequirement()
 {
     $sysInfo = Get-WmiObject Win32_OperatingSystem
@@ -294,17 +402,21 @@ function Check-SystemRequirement()
         $allowGuest = $registryObj.$registryName
         if ($allowGuest -eq $null -Or $allowGuest -ne 1 )
         {
+            $command = ""
             if ($allowGuest -eq $null)
             {
                 $value = "null"
+                $command = "New-ItemProperty -Path {0} -Name {1} -PropertyType {2} -Value {3}" -f $registryPath, $registryName, "DWORD", 1
             }
             else
             {
                 $value = "$allowGuest"
+                $command = "Set-ItemProperty -Path {0} -Name {1} -Value {2}" -f $registryPath, $registryName, 1
             }
             $failMsg = $messages.Fail -f ("[{0}] {1}: {2}" -f $registryPath, $registryName, $value)
             Write-Host $failMsg -ForegroundColor Red
             Add-NextStep ($messages.NsNoGuestAccess -f ("    [{0}]`n    {1}=REG_DWORD:1" -f $registryPath, $registryName), $references.MsftSmbGuestAccess)
+            Add-NextCommand $command
             $global:regeditNeeded = $true
             return $true
         }
@@ -379,13 +491,493 @@ function Check-MountTarget()
         Write-Host $passMsg -ForegroundColor Green
         return $true
     }
-    Add-NextStep ($messages.NsBadConnection1 -f $MountAddress)
+    Add-NextStep ($messages.NsBadSmbConnection -f $MountAddress)
     Write-Host $failMsg -ForegroundColor Red
     return $false
 }
 
+function Get-DriveLetter()
+{
+    $Drives = Get-ChildItem -Path Function:[a-z]: -Name
+    for ($i = $Drives.count - 1; $i -ge 0; $i--) {
+        if (-Not (Test-Path -Path $Drives[$i])){
+            return $Drives[$i]
+        }
+    }
+    return ""
+}
+
+function Invoke-MountTarget()
+{
+    $passMsg = $messages.Pass -f ($messages.InvokeMountTarget -f $MountAddress)
+    $failMsg = $messages.Fail -f ($messages.InvokeMountTarget -f $MountAddress)
+    $driveLetter = Get-DriveLetter
+    if ($driveLetter -eq "")
+    {
+        Write-Host $messages.NoAvailableDriveLetter -ForegroundColor Red
+        Write-Host $failMsg -ForegroundColor Red
+        return $false
+    }
+    if ($Username -eq "")
+    {
+        $command = "net use {0} \\{1}\myshare" -f $driveLetter, $MountAddress
+    }
+    elseif ($Userdomain -eq "")
+    {
+        $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+        if ($Password -eq "")
+        {
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3}" -f $driveLetter, $MountAddress, $domainCom, $Username
+        }
+        else
+        {
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3} {4}" -f $driveLetter, $MountAddress, $domainCom, $Username, $Password
+        }
+    }
+    else
+    {
+        if (-Not (Check-Userdomain))
+        {
+            return $false
+        }
+        if ($Password -eq "")
+        {
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3}" -f $driveLetter, $MountAddress, $Userdomain, $Username
+        }
+        else
+        {
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3} {4}" -f $driveLetter, $MountAddress, $Userdomain, $Username, $Password
+        }
+    }
+
+    if (-Not (Invoke-PromptCommand $command))
+    {
+        Write-Host $failMsg -ForegroundColor Red
+        return $false
+    }
+
+    Write-Host $passMsg -ForegroundColor Green
+    return $true
+}
+
+function New-SystemMountTaskAndRun()
+{
+    $command = 'schtasks /create /tn "my_mount" /tr "c:\my_mount.bat" /sc onstart /RU SYSTEM /RL HIGHEST; schtasks /run /tn "my_mount"'
+    if (-Not (Invoke-PromptCommand $command))
+    {
+        Write-Host $messages.CreateSystemMountTaskFailed -ForegroundColor Red
+        return $false
+    }
+    return $true
+}
+
+function Invoke-SystemMount()
+{
+    Write-Host $messages.StartSystemMount -ForegroundColor Green
+
+    $driveLetter = Get-DriveLetter
+    if ($driveLetter -eq "")
+    {
+        Write-Host $messages.NoAvailableDriveLetter -ForegroundColor Red
+        Write-Host $failMsg -ForegroundColor Red
+        return $false
+    }
+
+    $myMountBat = ""
+    # For 2016 or later, add /user password
+    $sysInfo = Get-WmiObject Win32_OperatingSystem
+    $sysVer = [System.Environment]::OSVersion.Version
+    $lastGuestSysInfo = Get-LastWindowsSystemAllowsGuest
+    $lastGuestSysVer = $lastGuestSysInfo.VersionObj
+    $gt = {$args[0] -gt $args[1]}
+    if (Compare-SystemVersionsBuild $sysVer $gt $lastGuestSysVer)
+    {
+        if ($Username -eq "" -Or $Password -eq "")
+        {
+            Write-Host $messages.EmptyUserinfoForSystemMountOnWin2016OrLater -ForegroundColor Red
+            return $false
+        }
+        $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+        if ($Userdomain -ne "" -And (Check-Userdomain))
+        {
+            $domainCom = $Userdomain
+        }
+        $myMountBat = @" 
+ECHO ON  
+ECHO This will map the drive, but is being run by task scheduler AS the user SYSTEM  
+ECHO which should make it accessible to the user SYSTEM  
+ECHO List the existing drives first.
+
+net use >> c:\SystemNetUseOutput.txt
+net use {0} \\{1}\myshare /user:{2}\{3} {4}
+
+ECHO List the existing drives with the new mapping
+
+net use >> c:\SystemNetUseOutput.txt
+
+ECHO See what user this batch job ran under  
+
+whoami >> c:\SystemNetUseOutput.txt
+
+ECHO need to exit to allow the job to finish
+EXIT
+"@ -f $driveLetter, $MountAddress, $domainCom, $Username, $Password
+    }
+    else
+    {
+        $myMountBat = @" 
+ECHO ON  
+ECHO This will map the drive, but is being run by task scheduler AS the user SYSTEM  
+ECHO which should make it accessible to the user SYSTEM  
+ECHO List the existing drives first.  
+
+net use >> c:\SystemNetUseOutput.txt  
+net use {0} \\{1}\myshare
+
+ECHO List the existing drives with the new mapping
+
+net use >> c:\SystemNetUseOutput.txt  
+
+ECHO See what user this batch job ran under  
+
+whoami >> c:\SystemNetUseOutput.txt  
+
+ECHO need to exit to allow the job to finish  
+EXIT
+"@ -f $driveLetter, $MountAddress
+    }
+
+    $command = "Set-Content -Path `"c:\my_mount.bat`" -Value `"$myMountBat`""
+    if (-Not (Invoke-PromptCommand $command))
+    {
+        Write-Host $messages.CreateMyMountBatFailed -ForegroundColor Red
+    }
+
+    try
+    {
+        $result = Get-ScheduledTaskInfo "my_mount"
+        if ($result.TaskName -eq "my_mount")
+        {
+            $command = 'schtasks /run /tn "my_mount"'
+            if (-Not (Invoke-PromptCommand $command))
+            {
+                Write-Host $messages.RunSystemMountTaskFailed -ForegroundColor Red
+                return $false
+            }
+        }
+        elseif (-Not (New-SystemMountTaskAndRun))
+        {
+            return $false
+        }
+    }
+    catch
+    {
+        if (-Not (New-SystemMountTaskAndRun))
+        {
+            return $false
+        }
+    }
+
+    Write-Host $messages.EndSystemMount -ForegroundColor Green
+    return $true
+}
+
+function Set-ADControllerSettings()
+{
+    Write-Host $messages.StartSettingADController -ForegroundColor Green
+
+    if ($Userdomain -eq "")
+    {
+        Write-Host $messages.EmptyDomainForADControllerSettings -ForegroundColor Red
+        return $false
+    }
+    if (-Not (Check-Userdomain))
+    {
+        return $false
+    }
+
+    $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+
+    if ($domainCom -eq "WORKGROUP")
+    {
+        $sysInfo = Get-WmiObject Win32_OperatingSystem
+        $sysVer = [System.Environment]::OSVersion.Version
+
+        $eq = {$args[0] -eq $args[1]}
+
+        # Check if it is 2008 R2
+        $minSysInfo = Get-MinWindowsSystem
+        $minSysVer = $minSysInfo.VersionObj
+        if (Compare-SystemVersionsMinor $sysVer $eq $minSysVer)
+        {
+            Write-Host $messages.ConfigADControllerManuallyFor2008R2 -ForegroundColor Red
+            return $false
+        }
+        else
+        {
+            if (-Not (Get-WindowsFeature AD-Domain-Services).Installed)
+            {
+                $command = "Install-WindowsFeature AD-Domain-Services -IncludeManagementTools"
+                if (-Not (Invoke-PromptCommand $command))
+                {
+                    Write-Host $messages.InstallADDSFailed -ForegroundColor Red
+                    return $false
+                }
+            }
+            if (-Not (Get-WindowsFeature DNS).Installed)
+            {
+                
+                $command = "Install-WindowsFeature DNS -IncludeManagementTools"
+                if (-Not (Invoke-PromptCommand $command))
+                {
+                    Write-Host $messages.InstallDNSFailed -ForegroundColor Red
+                    return $false
+                }
+            }
+        }
+
+        try
+        {
+            Get-ADDomainController
+        }
+        catch
+        {
+            $command = "Install-ADDSForest -InstallDns -DomainName $Userdomain"
+            if (-Not (Invoke-PromptCommand $command))
+            {
+                Write-Host $messages.InstallADDSForestFailed -ForegroundColor Red
+                return $false
+            }
+        }
+    }
+    elseif ($domainCom -ne $Userdomain)
+    {
+        Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+        return $false
+    }
+
+    try
+    {
+        Get-ADUser alinas
+    }
+    catch
+    {
+        $UserdomainTrimed = $Userdomain.Trim(".com")
+        $command = "dsadd user CN=alinas,DC=$UserdomainTrimed,DC=com -samid alinas -display `"Alibaba Cloud NAS Service Account`" -pwd tHePaSsWoRd123 -pwdneverexpires yes"
+        if (-Not (Invoke-PromptCommand $command))
+        {
+            Write-Host $messages.DsaddUserAlinasFailed -ForegroundColor Red
+            return $false
+        }
+    }
+
+    if (-Not (Check-SetSpnAlinas $domainCom))
+    {
+        $command = "setspn -S cifs/$MountAddress alinas"
+        if (-Not (Invoke-PromptCommand $command))
+        {
+            Write-Host ($messages.SetspnCifsAlinasFailed -f $MountAddress) -ForegroundColor Red
+            return $false
+        }
+    }
+
+    $command = "ktpass -princ cifs/$MountAddress@$domainCom -ptype KRB5_NT_PRINCIPAL -crypto All -out c:\nas-mount-target.keytab -pass tHePaSsWoRd123"
+    Invoke-PromptCommand $command -ignoreError $true
+    if (-Not (Test-Path "c:\nas-mount-target.keytab"))
+    {
+        Write-Host ($messages.GenerateKeytabFailed -f $MountAddress, $domainCom) -ForegroundColor Red
+        return $false
+    }
+
+    Write-Host $messages.EndSettingADController -ForegroundColor Yellow
+    return $true
+}
+
+function Check-Userdomain()
+{
+    if ($Userdomain -ne "" -And (-Not ($Userdomain -like "*.com")))
+    {
+        Write-Host ($messages.UserDomainShouldHaveDotCom -f $Userdomain) -ForegroundColor Red
+        return $false
+    }
+
+    return $true
+}
+
+function Check-SetSpnAlinas([string]$domainCom)
+{
+    $domain = $domainCom.Trim(".com")
+    try
+    {
+        $result = Invoke-Expression 'setspn alinas'
+        $lines = $result.Split("`n")
+        if ($lines.count -lt 2)
+        {
+            Write-Host ($messages.SetSpnLessThanTwoLines -f $result) -ForegroundColor Red
+            Add-NextStep $messages.CorrectSetSpn
+            return $false
+        }
+        if (-Not $lines[0].contains("CN=alinas") -Or -Not $lines[0].contains("DC=$domain"))
+        {
+            Write-Host ($messages.UnexpectedSetSpnFirstLine -f $result, $lines[0]) -ForegroundColor Red
+            Add-NextStep $messages.CorrectSetSpn
+            return $false
+        }
+        $found = $false
+        for ($i = 1; $i -lt $lines.count; $i = $i + 1)
+        {
+            if ($lines[$i].Trim() -like "cifs/$MountAddress")
+            {
+                $found = $true
+                break
+            }
+        }
+        if (-Not $found)
+        {
+            Write-Host ($messages.NoCifsMountAddress -f $result) -ForegroundColor Red
+            Add-NextStep $messages.CorrectSetSpn
+            return $false
+        }
+    }
+    catch
+    {
+        Write-Host $messages.IncorrectSetSpn -ForegroundColor Red
+        Add-NextStep $messages.CorrectSetSpn
+        return $false
+    }
+
+    return $true
+}
+
+function Check-ADControllerSettings()
+{
+    Write-Host $messages.StartADControllerCheck -ForegroundColor Green
+
+    $domainCom = ""
+    try
+    {
+        $result = Get-ADDomainController
+        $domainCom = $result.Domain
+    }
+    catch
+    {
+        Write-Host $messages.NotADDomainController -ForegroundColor Red
+        return $false
+    }
+
+    if (-Not (Check-Userdomain))
+    {
+        return $false
+    }
+
+    if ($domainCom -ne $Userdomain)
+    {
+        Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+        return $false
+    }
+
+    try
+    {
+        [securestring]$secStringPassword = ConvertTo-SecureString $Password -AsPlainText -Force
+        [pscredential]$credObject = New-Object System.Management.Automation.PSCredential ("$Userdomain\$Username", $secStringPassword)
+        Get-AdUser -Identity $Username -Credential $credObject
+    }
+    catch
+    {
+        Write-Host ($messages.IncorrectADUsernameOrPassword -f "$Userdomain\$Username", $Password) -ForegroundColor Red
+        return $false
+    }
+
+    if (-Not (Check-SetSpnAlinas $domainCom))
+    {
+        return $false
+    }
+
+    Write-Host $messages.EndADControllerCheck -ForegroundColor Green
+    return $true
+}
+
+function Check-ADDomain([string]$domainCom)
+{
+    if ($domainCom -ne "WORKGROUP")
+    {
+        if (-Not (Check-Userdomain))
+        {
+            return $false
+        }
+        if ($domainCom -ne $Userdomain)
+        {
+            Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+            return $false
+        }
+    }
+    elseif ($Userdomain -ne "")
+    {
+        try
+        {
+            $result = Test-Connection $Userdomain
+        }
+        catch
+        {
+            Write-Host ($messages.PingADDomainFailed -f (Convert-String Get-DnsClientServerAddress)) -ForegroundColor Red
+            return $false
+        }
+        if (-Not (Check-ADPorts $Userdomain))
+        {
+            return $false
+        }
+    }
+    elseif (-Not (Check-ADPorts $domainCom))
+    {
+        return $false
+    }
+
+    return $true
+}
+
+function Check-ADPorts([string]$domainCom)
+{
+    $kerberosTest = Test-RemotePort $domainCom 88
+    if (-Not $kerberosTest)
+    {
+        Write-Host ($messages.KerbeorsPortFailed -f $domainCom) -ForegroundColor Red
+        return $false
+    }
+
+    $ldapTest = Test-RemotePort $domainCom 389
+    if (-Not $ldapTest)
+    {
+        Write-Host ($messages.LDAPPortFailed -f $domainCom) -ForegroundColor Red
+        return $false
+    }
+
+    $ldapGlobalCalalogTest = Test-RemotePort $domainCom 3268
+    if (-Not $ldapGlobalCalalogTest)
+    {
+        Write-Host ($messages.LDAPGlobalCatalogPortFailed -f $domainCom) -ForegroundColor Red
+        return $false
+    }
+
+    return $true
+}
+
+function Check-ADClientSettings()
+{
+    Write-Host $messages.StartADClientCheck -ForegroundColor Green
+
+    $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+    if (-Not (Check-ADDomain $domainCom))
+    {
+        return $false
+    }
+
+    Write-Host $messages.EndADClientCheck -ForegroundColor Green
+    return $true
+}
+
 function Check-NfsService()
 {
+    # Don't auto fix nfs service as the impact of nfs service to smb service is still a myth.
     $actionString = ""
 
     try
@@ -397,6 +989,8 @@ function Check-NfsService()
         if ($nfsServices.Count -gt 0 -And $nfsServices[0].Installed)
         {
             $actionString = $messages.NsHasNfsService1 -f $nfsServices[0].DisplayName
+            $command = "Uninstall-WindowsFeature FS-NFS-Service"
+            # Add-NextCommand $command
         }
         # Check NFS-Client feature
         $nfsClient = Get-WindowsFeature NFS-Client
@@ -407,12 +1001,14 @@ function Check-NfsService()
                 $actionString += "`n"
             }
             $actionString += $messages.NsHasNfsService1 -f $nfsClient[0].DisplayName
+            $command = "Uninstall-WindowsFeature NFS-Client"
+            # Add-NextCommand $command
         }
     }
     catch
     {
         # Win 10 does not have ServerManager
-        $nfsClient = Get-WindowsOptionalFeature -Online -FeatureName ClientForNFS*
+        $nfsClient = Get-WindowsOptionalFeature -Online -FeatureName ClientForNFS-Infrastructure
         if ($nfsClient.Count -gt 0 -And $nfsServices.State -eq "Enabled")
         {
             if ($actionString -ne "")
@@ -420,6 +1016,8 @@ function Check-NfsService()
                 $actionString += "`n"
             }
             $actionString += $messages.NsHasNfsService1 -f $nfsClient[0].DisplayName
+            $command = "Disable-WindowsOptionalFeature -Online -FeatureName ClientForNFS-Infrastructure"
+            # Add-NextCommand $command
         }
     }
 
@@ -436,6 +1034,10 @@ function Check-NfsService()
             $actionString += "`n"
         }
         $actionString += $messages.NsHasNfsService2 -f $registryString
+        $npOrder = $npOrder -replace "nfsnp,","" -replace ",nfsnp",""
+        $npOrder = "`"$nporder`""
+        $command = "Set-ItemProperty -Path {0} -Name {1} -Value {2}" -f $registryPath, $registryName, $npOrder
+        # Add-NextCommand $command
     }
     if ($actionString -ne "")
     {
@@ -462,7 +1064,7 @@ function Check-LocalServices()
         $localService = Get-Service -Name $srv
         if ($localService.Status -ne "Running")
         {
-            [void]$servicesToStart.Add($localService.DisplayName)
+            [void]$servicesToStart.Add($localService.Name)
         }
     }
 
@@ -476,6 +1078,8 @@ function Check-LocalServices()
                 $actionString += "`n"
             }
             $actionString += $messages.NsServiceNotRunningTpl -f $srvName
+            $command = "Set-Service -Name $srvName -Status Running"
+            Add-NextCommand $command
         }
         Add-NextStep ($messages.NsServiceNotRunning -f $actionString)
         $global:localServiceNeeded = $true
@@ -490,6 +1094,17 @@ function Check-LocalServices()
         $actionString = ""
         $registryString = "      [{0}]`n      {1}=REG_SZ:{2}" -f $registryPath, $registryName, $npOrder
         Add-NextStep ($messages.NsLanmanNotInProviderOrder -f $registryString)
+        if ($npOrder -eq "")
+        {
+            $npOrder = "LanmanWorkstation"
+        }
+        else
+        {
+            $npOrder += ",LanmanWorkstation"
+            $npOrder = "`"$nporder`""
+        }
+        $command = "Set-ItemProperty -Path {0} -Name {1} -Value {2}" -f $registryPath, $registryName, $npOrder
+        Add-NextCommand $command
         $global:lanmanNotInProviderOrder = $true
     }
 
@@ -653,6 +1268,58 @@ function Print-NextSteps()
     }
 }
 
+function Invoke-PromptCommand([string]$command, [bool]$ignoreError = $false)
+{
+    $title = $messages.RunCommand -f $command
+    Write-Host $title -ForegroundColor Yellow
+    $question = $command
+    [string[]]$choices = $messages.Yes, $messages.No
+    $decision = $Host.UI.PromptForChoice($title, $question, $choices, 1)
+    if ($decision -eq 0)
+    {
+        $commandForInvokeExpression = $command + ';$?'
+        if (-Not (Invoke-Expression $commandForInvokeExpression) -And -Not $ignoreError)
+        {
+            Write-Host ($messages.RunCommandFailed -f $command) -ForegroundColor Red
+            return $false
+        }
+    }
+    else
+    {
+        Write-Host ($messages.IgnoreCommand -f $command) -ForegroundColor Yellow
+        return $false
+    }
+    return $true
+}
+
+function Invoke-NextCommands()
+{
+    if ($nextSteps.Count -gt 0)
+    {
+        Print-HorizontalLine
+        Write-Host ($messages.NextCommand -f $nextCommands.Count) -ForegroundColor Cyan
+    }
+    else
+    {
+        # Write-Host $messages.NoNextCommand
+        return
+    }
+    $executedCount = 0
+    for ($i = 0; $i -lt $nextCommands.Count; $i++)
+    {
+        Write-Host ("`n{0}. {1}" -f ($i + 1), $nextCommands[$i]) -ForegroundColor Cyan
+        if (Invoke-PromptCommand $nextCommands[$i])
+        {
+            $executedCount++
+        }
+    }
+    $skippedCount = $nextCommands.Count - $executedCount
+    if ($skippedCount -gt 0)
+    {
+        Write-Host ($messages.SkipNextCommands -f ($nextCommands.Count, $executedCount, $skippedCount)) -ForegroundColor Yellow
+    }
+}
+
 function Print-Suggestions([string]$localeChoice)
 {
     Write-Host $messages.MountFailSuggestion -ForegroundColor Yellow
@@ -671,7 +1338,6 @@ function Print-Suggestions([string]$localeChoice)
 }
 
 ### Main Script ###
-
 # Registry action required
 $global:regeditNeeded = $false
 $global:localServiceNeeded = $false
@@ -691,6 +1357,7 @@ $sysEncoding = [System.Console]::OutputEncoding
 $cnEncoding = [System.Text.Encoding]::GetEncoding(936)
 # Initialize recommended next steps
 $nextSteps = [System.Collections.ArrayList]@()
+$nextCommands = [System.Collections.ArrayList]@()
 
 # Use chinese encoding in powershell if locale is zh-CN
 if ($localeChoice -eq "zh-CN")
@@ -741,6 +1408,22 @@ try
     # Check NFS Client on Windows
     Check-NfsService
 
+    if ($CheckAD)
+    {
+        Print-HorizontalLine
+        $isADController = Check-ADControllerSettings
+        if (-Not $isADController)
+        {
+            Print-HorizontalLine
+            $isAdValid = Check-ADClientSettings
+        }
+    }
+
+    if ($ConfigAD)
+    {
+        $result = Set-ADControllerSettings
+    }
+
     # Validate mount target
     $hasMountTarget = Check-MountTarget $MountAddress
 
@@ -751,17 +1434,31 @@ try
     # Show mount commands if a mount target is valid
     if ($hasMountTarget)
     {
-        Write-Host ""
-        Print-HorizontalLine
-        Print-MountCommands
+        if ($SystemMount)
+        {
+            Print-HorizontalLine
+            $result = Invoke-SystemMount
+        }
+        elseif ($InvokeMount)
+        {
+            Write-Host ""
+            Print-HorizontalLine
+            Print-MountCommands
+            $result = Invoke-MountTarget
+        }
+    }
+    elseif ($SystemMount)
+    {
+        Write-Host ($messages.SkipSystemMount -f $MountAddress) -ForegroundColor Red
+    }
+    elseif ($InvokeMount)
+    {
+        Write-Host ($messages.SkipMount -f $MountAddress) -ForegroundColor Red
     }
 }
 catch
 {
-    Write-Host "An error occurred:" -ForegroundColor Red
-    Write-Host $_.ScriptStackTrace -ForegroundColor Red
-    Write-Host "Exception:" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host ($messages.PrintException -f $_.ScriptStackTrace, $_.Exception.Message) -ForegroundColor Red
 
     # Show next steps if available
     Write-Host ""
@@ -770,18 +1467,19 @@ catch
 finally
 {
     [System.Console]::Out.Flush()
-    # Print footer
-    Write-Host ""
-    Write-Host ($messages.Question -f $references.AliyunChinaSupport, $references.AlibabaCloudIntlSupport)
-    Write-Host ""
-    # Recover system output encoding
-    $currEncoding = [System.Console]::OutputEncoding
-    if ($sysEncoding -ne $currEncoding)
-    {
-        Write-Host "`n!! NOTICE: console output encoding has been changed to $($currEncoding.EncodingName)"
-        Write-Host "- Run the following command to recover original console output encoding ($($sysEncoding.EncodingName)):"
-        Write-Host "  [System.Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding($($sysEncoding.CodePage))"
-    }
-
-    Read-Host -Prompt $messages.EnterToExit
 }
+
+Invoke-NextCommands
+
+# Print footer
+Write-Host ""
+Print-HorizontalLine
+Write-Host ($messages.Question -f $references.AliyunChinaSupport, $references.AlibabaCloudIntlSupport)
+Write-Host ""
+# Recover system output encoding
+$currEncoding = [System.Console]::OutputEncoding
+if ($sysEncoding -ne $currEncoding)
+{
+    Write-Host ($messages.PrintEncodingError -f $currEncoding.EncodingName, $currEncoding.EncodingName, $sysEncoding.CodePage) -ForegroundColor Yellow
+}
+Read-Host -Prompt $messages.EnterToExit
