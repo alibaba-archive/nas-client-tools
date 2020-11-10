@@ -1480,6 +1480,6 @@ Write-Host ""
 $currEncoding = [System.Console]::OutputEncoding
 if ($sysEncoding -ne $currEncoding)
 {
-    Write-Host ($messages.PrintEncodingError -f $currEncoding.EncodingName, $currEncoding.EncodingName, $sysEncoding.CodePage) -ForegroundColor Yellow
+    Write-Host ($messages.PrintEncodingError -f $currEncoding.EncodingName, $sysEncoding.EncodingName, $sysEncoding.CodePage) -ForegroundColor Yellow
 }
 Read-Host -Prompt $messages.EnterToExit
