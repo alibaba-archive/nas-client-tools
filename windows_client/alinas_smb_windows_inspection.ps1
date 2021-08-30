@@ -77,7 +77,8 @@ param (
     [bool]$SystemMount = $false,
     [string]$Username = "",
     [string]$Userdomain = "",
-    [string]$Password = ""
+    [string]$Password = "",
+    [string]$SetspnNas = "alinas"
 )
 
 function Get-ReferenceUrls()
@@ -154,13 +155,13 @@ function Get-LocaleMessages([string]$localeChoice)
         NsBadSmbConnection = "NAS SMB service is not available via mount target ({0}), please double-check mount point address";
         NoAvailableDriveLetter = "All drive letters from a to z are occupied. Please release some and try again";
         NotADDomainController = "Not AD domain controller. Ignore ADDC checkings";
-        UserDomainShouldHaveDotCom = "Userdomain: {0} should end with .com";
+        UserDomainShouldHaveParts = "Userdomain: {0} should have . splitted parts like abc.def.org";
         ADDomainMismatch = "ADDomain mismatch: AD domain: {0}, user input domain: {1}";
         IncorrectADUsernameOrPassword = "Incorrect AD username or password. Input username: {0}, input password: {1}";
-        IncorrectSetSpn = "Incorrect setspn alinas result";
+        IncorrectSetSpn = "Incorrect setspn {0} result";
         CorrectSetSpn = "To setspn correctly, please refer to: https://help.aliyun.com/document_detail/154930.html";
         SetSpnLessThanTwoLines = "setspn result: {0}, less than 2 lines";
-        UnexpectedSetSpnFirstLine = "setspn result: {0}, first line: {1} is not: Registered ServicePrincipalNames for CN=alinas,DC=domain,DC=com";
+        UnexpectedSetSpnFirstLine = "setspn result: {0}, first line: {1} is not: Registered ServicePrincipalNames for CN={2},DC=domain,DC=subdomain,...,DC=com";
         NoCifsMountAddress = "setspn result doesn't have cifs/{0}";
         StartADControllerCheck = "Start ADController checking";
         EndADControllerCheck = "ADController checking is completed. AD domain name, username and setspn result are correct. If mount failed or identity authentication failed, it could be keytab errors. Please refer to: https://help.aliyun.com/document_detail/154930.html";
@@ -259,12 +260,12 @@ function Get-LocaleMessages([string]$localeChoice)
         NoAvailableDriveLetter = "盘符a-z都被占用. 请释放任意盘符后再重试";
         NotADDomainController = "不是AD服务器, 跳过AD服务器设置检查";
         ADDomainMismatch = "ADDomain不匹配: ADDomain: {0}, 用户输入Domain: {1}";
-        UserDomainShouldHaveDotCom = "用户AD域: {0}, 需要有.com结尾";
+        UserDomainShouldHaveParts = "用户AD域: {0}, 需要有.分段，类似abc.def.org";
         IncorrectADUsernameOrPassword = "AD用户名或密码不正确. 用户名: {0}, 密码: {1}";
-        IncorrectSetSpn = "setspn alinas命令结果不正确";
+        IncorrectSetSpn = "setspn {0} 命令结果不正确";
         CorrectSetSpn = "正确setspn配置请参考: https://help.aliyun.com/document_detail/154930.html";
         SetSpnLessThanTwoLines = "setspn输出结果: {0}, 行数小于2";
-        UnexpectedSetSpnFirstLine = "setspn结果: {0}, 第一行: {1} 不等于: Registered ServicePrincipalNames for CN=alinas,DC=domain,DC=com";
+        UnexpectedSetSpnFirstLine = "setspn结果: {0}, 第一行: {1} 不等于: Registered ServicePrincipalNames for CN={2},DC=domain,DC=subdomain,...,DC=com";
         NoCifsMountAddress = "setspn结果不包含cifs/{0}";
         StartADControllerCheck = "开始AD服务端配置检查";
         EndADControllerCheck = "AD服务端配置检查结束. AD域名, 用户名, setspn配置正常. 如果挂载失败或者身份认证错误, 可能是keytab生成或者上传出错. 请参考: https://help.aliyun.com/document_detail/154930.html";
@@ -524,14 +525,14 @@ function Invoke-MountTarget()
     }
     elseif ($Userdomain -eq "")
     {
-        $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+        $domainFull = (Get-WmiObject Win32_ComputerSystem).Domain
         if ($Password -eq "")
         {
-            $command = "net use {0} \\{1}\myshare /user:{2}\{3}" -f $driveLetter, $MountAddress, $domainCom, $Username
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3}" -f $driveLetter, $MountAddress, $domainFull, $Username
         }
         else
         {
-            $command = "net use {0} \\{1}\myshare /user:{2}\{3} {4}" -f $driveLetter, $MountAddress, $domainCom, $Username, $Password
+            $command = "net use {0} \\{1}\myshare /user:{2}\{3} {4}" -f $driveLetter, $MountAddress, $domainFull, $Username, $Password
         }
     }
     else
@@ -597,10 +598,10 @@ function Invoke-SystemMount()
             Write-Host $messages.EmptyUserinfoForSystemMountOnWin2016OrLater -ForegroundColor Red
             return $false
         }
-        $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+        $domainFull = (Get-WmiObject Win32_ComputerSystem).Domain
         if ($Userdomain -ne "" -And (Check-Userdomain))
         {
-            $domainCom = $Userdomain
+            $domainFull = $Userdomain
         }
         $myMountBat = @" 
 ECHO ON  
@@ -621,7 +622,7 @@ whoami >> c:\SystemNetUseOutput.txt
 
 ECHO need to exit to allow the job to finish
 EXIT
-"@ -f $driveLetter, $MountAddress, $domainCom, $Username, $Password
+"@ -f $driveLetter, $MountAddress, $domainFull, $Username, $Password
     }
     else
     {
@@ -696,9 +697,9 @@ function Set-ADControllerSettings()
         return $false
     }
 
-    $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
+    $domainFull = (Get-WmiObject Win32_ComputerSystem).Domain
 
-    if ($domainCom -eq "WORKGROUP")
+    if ($domainFull -eq "WORKGROUP")
     {
         $sysInfo = Get-WmiObject Win32_OperatingSystem
         $sysVer = [System.Environment]::OSVersion.Version
@@ -750,20 +751,26 @@ function Set-ADControllerSettings()
             }
         }
     }
-    elseif ($domainCom -ne $Userdomain)
+    elseif ($domainFull -ne $Userdomain)
     {
-        Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+        Write-Host ($messages.ADDomainMismatch -f $domainFull, $Userdomain) -ForegroundColor Red
         return $false
     }
 
     try
     {
-        Get-ADUser alinas
+        Get-ADUser $SetspnNas
     }
     catch
     {
-        $UserdomainTrimed = $Userdomain.TrimEnd("com").TrimEnd(".")
-        $command = "dsadd user CN=alinas,DC=$UserdomainTrimed,DC=com -samid alinas -display `"Alibaba Cloud NAS Service Account`" -pwd tHePaSsWoRd123 -pwdneverexpires yes"
+        $domainParts = $Userdomain.Split(".")
+        $command = "dsadd user CN=$SetspnNas"
+        for ($i = 0; $i -lt $domainParts.count; $i++)
+        {
+            $part = $domainParts[$i]
+            $command += ",DC=$part"
+        }
+        $command += " -samid $SetspnNas -display `"Alibaba Cloud NAS Service Account`" -pwd tHePaSsWoRd123 -pwdneverexpires yes"
         if (-Not (Invoke-PromptCommand $command))
         {
             Write-Host $messages.DsaddUserAlinasFailed -ForegroundColor Red
@@ -771,21 +778,21 @@ function Set-ADControllerSettings()
         }
     }
 
-    if (-Not (Check-SetSpnAlinas $domainCom))
+    if (-Not (Check-SetSpnAlinas $domainFull))
     {
-        $command = "setspn -S cifs/$MountAddress alinas"
+        $command = "setspn -S cifs/$MountAddress $SetspnNas"
         if (-Not (Invoke-PromptCommand $command))
         {
             Write-Host ($messages.SetspnCifsAlinasFailed -f $MountAddress) -ForegroundColor Red
             return $false
         }
     }
-
-    $command = "ktpass -princ cifs/$MountAddress@$domainCom -ptype KRB5_NT_PRINCIPAL -crypto All -out c:\nas-mount-target.keytab -pass tHePaSsWoRd123"
+    $domainFullUpper = $domainFull.ToUpper()
+    $command = "ktpass -princ cifs/$MountAddress@$domainFullUpper -ptype KRB5_NT_PRINCIPAL -mapuser $SetspnNas@$domainFull -crypto All -out c:\nas-mount-target.keytab -pass tHePaSsWoRd123"
     Invoke-PromptCommand $command -ignoreError $true
     if (-Not (Test-Path "c:\nas-mount-target.keytab"))
     {
-        Write-Host ($messages.GenerateKeytabFailed -f $MountAddress, $domainCom) -ForegroundColor Red
+        Write-Host ($messages.GenerateKeytabFailed -f $MountAddress, $domainFull) -ForegroundColor Red
         return $false
     }
 
@@ -795,21 +802,21 @@ function Set-ADControllerSettings()
 
 function Check-Userdomain()
 {
-    if ($Userdomain -ne "" -And (-Not ($Userdomain -like "*.com")))
+    if ($Userdomain -ne "" -And $Userdomain.Split(".").count -le 1)
     {
-        Write-Host ($messages.UserDomainShouldHaveDotCom -f $Userdomain) -ForegroundColor Red
+        Write-Host ($messages.UserDomainShouldHaveParts -f $Userdomain) -ForegroundColor Red
         return $false
     }
 
     return $true
 }
 
-function Check-SetSpnAlinas([string]$domainCom)
+function Check-SetSpnAlinas([string]$domainFull)
 {
-    $domain = $domainCom.TrimEnd("com").TrimEnd(".")
+    $domainParts = $domainFull.Split(".")
     try
     {
-        $result = Invoke-Expression 'setspn alinas'
+        $result = Invoke-Expression "setspn $SetspnNas"
         $lines = $result.Split("`n")
         if ($lines.count -lt 2)
         {
@@ -817,11 +824,15 @@ function Check-SetSpnAlinas([string]$domainCom)
             Add-NextStep $messages.CorrectSetSpn
             return $false
         }
-        if (-Not $lines[0].contains("CN=alinas") -Or -Not $lines[0].contains("DC=$domain"))
+        for ($i = 0; $i -lt $domainParts.count; $i++)
         {
-            Write-Host ($messages.UnexpectedSetSpnFirstLine -f $result, $lines[0]) -ForegroundColor Red
-            Add-NextStep $messages.CorrectSetSpn
-            return $false
+            $part = $domainParts[$i]
+            if (-Not $lines[0].contains("CN=$SetspnNas") -Or -Not $lines[0].contains("DC=$part"))
+            {
+                Write-Host ($messages.UnexpectedSetSpnFirstLine -f $result, $lines[0], $SetspnNas) -ForegroundColor Red
+                Add-NextStep $messages.CorrectSetSpn
+                return $false
+            }
         }
         $found = $false
         for ($i = 1; $i -lt $lines.count; $i = $i + 1)
@@ -841,7 +852,7 @@ function Check-SetSpnAlinas([string]$domainCom)
     }
     catch
     {
-        Write-Host $messages.IncorrectSetSpn -ForegroundColor Red
+        Write-Host ($messages.IncorrectSetSpn -f $SetspnNas) -ForegroundColor Red
         Add-NextStep $messages.CorrectSetSpn
         return $false
     }
@@ -853,11 +864,11 @@ function Check-ADControllerSettings()
 {
     Write-Host $messages.StartADControllerCheck -ForegroundColor Green
 
-    $domainCom = ""
+    $domainFull = ""
     try
     {
         $result = Get-ADDomainController
-        $domainCom = $result.Domain
+        $domainFull = $result.Domain
     }
     catch
     {
@@ -870,9 +881,9 @@ function Check-ADControllerSettings()
         return $false
     }
 
-    if ($domainCom -ne $Userdomain)
+    if ($domainFull -ne $Userdomain)
     {
-        Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+        Write-Host ($messages.ADDomainMismatch -f $domainFull, $Userdomain) -ForegroundColor Red
         return $false
     }
 
@@ -888,7 +899,7 @@ function Check-ADControllerSettings()
         return $false
     }
 
-    if (-Not (Check-SetSpnAlinas $domainCom))
+    if (-Not (Check-SetSpnAlinas $domainFull))
     {
         return $false
     }
@@ -897,17 +908,17 @@ function Check-ADControllerSettings()
     return $true
 }
 
-function Check-ADDomain([string]$domainCom)
+function Check-ADDomain([string]$domainFull)
 {
-    if ($domainCom -ne "WORKGROUP")
+    if ($domainFull -ne "WORKGROUP")
     {
         if (-Not (Check-Userdomain))
         {
             return $false
         }
-        if ($domainCom -ne $Userdomain)
+        if ($domainFull -ne $Userdomain)
         {
-            Write-Host ($messages.ADDomainMismatch -f $domainCom, $Userdomain) -ForegroundColor Red
+            Write-Host ($messages.ADDomainMismatch -f $domainFull, $Userdomain) -ForegroundColor Red
             return $false
         }
     }
@@ -927,7 +938,7 @@ function Check-ADDomain([string]$domainCom)
             return $false
         }
     }
-    elseif (-Not (Check-ADPorts $domainCom))
+    elseif (-Not (Check-ADPorts $domainFull))
     {
         return $false
     }
@@ -935,26 +946,26 @@ function Check-ADDomain([string]$domainCom)
     return $true
 }
 
-function Check-ADPorts([string]$domainCom)
+function Check-ADPorts([string]$domainFull)
 {
-    $kerberosTest = Test-RemotePort $domainCom 88
+    $kerberosTest = Test-RemotePort $domainFull 88
     if (-Not $kerberosTest)
     {
-        Write-Host ($messages.KerbeorsPortFailed -f $domainCom) -ForegroundColor Red
+        Write-Host ($messages.KerbeorsPortFailed -f $domainFull) -ForegroundColor Red
         return $false
     }
 
-    $ldapTest = Test-RemotePort $domainCom 389
+    $ldapTest = Test-RemotePort $domainFull 389
     if (-Not $ldapTest)
     {
-        Write-Host ($messages.LDAPPortFailed -f $domainCom) -ForegroundColor Red
+        Write-Host ($messages.LDAPPortFailed -f $domainFull) -ForegroundColor Red
         return $false
     }
 
-    $ldapGlobalCalalogTest = Test-RemotePort $domainCom 3268
+    $ldapGlobalCalalogTest = Test-RemotePort $domainFull 3268
     if (-Not $ldapGlobalCalalogTest)
     {
-        Write-Host ($messages.LDAPGlobalCatalogPortFailed -f $domainCom) -ForegroundColor Red
+        Write-Host ($messages.LDAPGlobalCatalogPortFailed -f $domainFull) -ForegroundColor Red
         return $false
     }
 
@@ -965,8 +976,8 @@ function Check-ADClientSettings()
 {
     Write-Host $messages.StartADClientCheck -ForegroundColor Green
 
-    $domainCom = (Get-WmiObject Win32_ComputerSystem).Domain
-    if (-Not (Check-ADDomain $domainCom))
+    $domainFull = (Get-WmiObject Win32_ComputerSystem).Domain
+    if (-Not (Check-ADDomain $domainFull))
     {
         return $false
     }
@@ -1197,6 +1208,7 @@ function Print-Header()
     if ($MountAddress -eq "")
     {
         Write-Host ($messages.MissingMountTarget -f $messages.MountTargetTpl) -ForegroundColor Yellow
+        exit 1
     }
     else
     {
